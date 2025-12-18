@@ -2,18 +2,47 @@
 
 set -e
 
+ANDROID_NDK=android-ndk-r18b
+ANDROID_NDK_ZIP=${ANDROID_NDK}-linux-x86_64.zip
+ANDROID_NDK_PATH=$PWD/${ANDROID_NDK}
+
+CMAKE_VERSION=3.15.2
+CMAKE=cmake-${CMAKE_VERSION}-Linux-x86_64
+CMAKE_TAR=${CMAKE}.tar.gz
+CMAKE_BIN=$PWD/${CMAKE}/bin/cmake
+
 rm -rf $PWD/build
 
-ANDROID_NDK_PATH=$PWD/android-ndk-r18b
-CMAKE=$PWD/cmake-3.15.2-Linux-x86_64/bin/cmake
+if [ ! -d ${ANDROID_NDK_PATH} ];then
+	if [ ! -d ${ANDROID_NDK_ZIP} ];then
+		wget https://dl.google.com/android/repository/${ANDROID_NDK_ZIP}
+	fi
+	if [ unzip -t ${ANDROID_NDK_ZIP} ];then
+		rm ${ANDROID_NDK_ZIP}
+		echo ${ANDROID_NDK_ZIP} not unzip,remove ${ANDROID_NDK_ZIP}
+		exit
+	fi
+	if [ -f $PWD/${ANDROID_NDK_ZIP} ];then
+		unzip $PWD/${ANDROID_NDK_ZIP}
+		rm $PWD/${ANDROID_NDK_ZIP}
+	fi
+fi
 
-# export CC=$TOOLCHAIN/bin/aarch64-linux-android23-clang
-# export CXX=$TOOLCHAIN/bin/aarch64-linux-android23-clang++
+if [ ! -d ${CMAKE} ];then
+	if [ ! -d ${CMAKE_TAR} ];then
+		wget https://githubproxy.cc/https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/${CMAKE_TAR}
+	fi
+	if [ tar -tzf ${CMAKE_TAR} ];then
+		rm ${CMAKE_TAR}
+		echo ${CMAKE_TAR} not tar, remove ${CMAKE_TAR}
+		exit
+	fi
+	if [ -f ${CMAKE_TAR} ];then
+		tar -zxf ${CMAKE_TAR}
+		rm ${CMAKE_TAR}
+	fi
+fi
 
-# export AR=$TOOLCHAIN/bin/aarch64-linux-android-ar
-# export LD=$TOOLCHAIN/bin/aarch64-linux-android-ld
-# export STRIP=$TOOLCHAIN/bin/aarch64-linux-android-strip
-# export RANLIB=$TOOLCHAIN/bin/aarch64-linux-android-ranlib
 
 if [[ -z ${ANDROID_NDK_PATH} ]];then
     echo "Please set ANDROID_NDK_PATH, such as ANDROID_NDK_PATH=~/opts/ndk/android-ndk-r18b"
@@ -185,7 +214,7 @@ fi
 
         # -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_PATH}/build/cmake/android.toolchain.cmake\
 cd ${BUILD_DIR}
-${CMAKE} ../../${BUILD_DEMO_PATH} \
+${CMAKE_BIN} ../../${BUILD_DEMO_PATH} \
         -DTARGET_SOC=${TARGET_SOC} \
         -DANDROID_PLATFORM=android-23 \
         -DCMAKE_SYSTEM_NAME=Android \
