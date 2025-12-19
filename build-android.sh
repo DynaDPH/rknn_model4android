@@ -14,14 +14,14 @@ CMAKE_BIN=$PWD/${CMAKE}/bin/cmake
 rm -rf $PWD/build
 
 if [ ! -d ${ANDROID_NDK_PATH} ];then
-	if [ ! -d ${ANDROID_NDK_ZIP} ];then
+	if [ ! -f ${ANDROID_NDK_ZIP} ];then
 		wget https://dl.google.com/android/repository/${ANDROID_NDK_ZIP}
 	fi
-	if [ unzip -t ${ANDROID_NDK_ZIP} ];then
-		rm ${ANDROID_NDK_ZIP}
-		echo ${ANDROID_NDK_ZIP} not unzip,remove ${ANDROID_NDK_ZIP}
-		exit
-	fi
+  if ! unzip -t "${ANDROID_NDK_ZIP}" > /dev/null 2>&1; then
+      rm -f "${ANDROID_NDK_ZIP}"
+      echo "${ANDROID_NDK_ZIP} is not a valid zip file, remove ${ANDROID_NDK_ZIP}"
+      exit 1
+  fi
 	if [ -f $PWD/${ANDROID_NDK_ZIP} ];then
 		unzip $PWD/${ANDROID_NDK_ZIP}
 		rm $PWD/${ANDROID_NDK_ZIP}
@@ -29,14 +29,14 @@ if [ ! -d ${ANDROID_NDK_PATH} ];then
 fi
 
 if [ ! -d ${CMAKE} ];then
-	if [ ! -d ${CMAKE_TAR} ];then
+	if [ ! -f ${CMAKE_TAR} ];then
 		wget https://githubproxy.cc/https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/${CMAKE_TAR}
 	fi
-	if [ tar -tzf ${CMAKE_TAR} ];then
-		rm ${CMAKE_TAR}
-		echo ${CMAKE_TAR} not tar, remove ${CMAKE_TAR}
-		exit
-	fi
+  if ! tar -tzf "${CMAKE_TAR}" > /dev/null 2>&1; then
+      rm -f "${CMAKE_TAR}"
+      echo "${CMAKE_TAR} is not a valid tar.gz file, remove ${CMAKE_TAR}"
+      exit 1
+  fi
 	if [ -f ${CMAKE_TAR} ];then
 		tar -zxf ${CMAKE_TAR}
 		rm ${CMAKE_TAR}

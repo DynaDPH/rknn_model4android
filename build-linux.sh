@@ -2,7 +2,11 @@
 
 set -e
 
-export GCC_COMPILER=$PWD/gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf/bin/arm-linux-gnueabihf
+
+CMAKE_VERSION=3.15.2
+CMAKE=cmake-${CMAKE_VERSION}-Linux-x86_64
+CMAKE_TAR=${CMAKE}.tar.gz
+CMAKE_BIN=$PWD/${CMAKE}/bin/cmake
 
 echo "$0 $@"
 while getopts ":t:a:d:b:m:r:j" opt; do
@@ -57,6 +61,56 @@ if [ -z ${TARGET_SOC} ] || [ -z ${BUILD_DEMO_NAME} ]; then
   exit -1
 fi
 
+if echo ${TARGET_SOC} | grep -q "rv" ;then
+    echo "Not support RV soc"
+    exit
+fi
+
+if [ ${TARGET_ARCH} = "aarch64" ];then
+    if [ ! -d "gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu" ];then
+        if [ ! -f "gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu.tar.xz" ];then
+            wget https://releases.linaro.org/components/toolchain/binaries/6.3-2017.05/aarch64-linux-gnu/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu.tar.xz
+        fi
+        if ! tar -tJf "gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu.tar.xz" > /dev/null 2>&1; then
+            rm -f "gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu.tar.xz"
+            echo "gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu.tar.xz is not a valid tar.xz file, exit"
+            exit 1
+        fi
+        tar -xJf 'gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu.tar.xz'
+        rm -f "gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu.tar.xz"
+    fi
+    GCC_COMPILER=$PWD/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu
+elif [ ${TARGET_ARCH} = "armhf" ];then
+    if [ ! -d "gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf" ];then
+        if [ ! -f "gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz" ];then
+            wget https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel/gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz
+        fi
+        if ! tar -tJf "gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz" > /dev/null 2>&1; then
+            rm -f "gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz"
+            echo "gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz is not a valid tar.xz file, exit"
+            exit 1
+        fi
+        tar -xJf 'gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz'
+        rm -f "gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz"
+    fi
+    GCC_COMPILER=$PWD/gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf/bin/arm-linux-gnueabihf
+fi
+
+if [ ! -d ${CMAKE} ];then
+	if [ ! -f ${CMAKE_TAR} ];then
+		wget https://githubproxy.cc/https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/${CMAKE_TAR}
+	fi
+  if ! tar -tzf "${CMAKE_TAR}" > /dev/null 2>&1; then
+      rm -f "${CMAKE_TAR}"
+      echo "${CMAKE_TAR} is not a valid tar.gz file, remove ${CMAKE_TAR}"
+      exit 1
+  fi
+	if [ -f ${CMAKE_TAR} ];then
+		tar -zxf ${CMAKE_TAR}
+		rm ${CMAKE_TAR}
+	fi
+fi
+
 if [[ -z ${GCC_COMPILER} ]];then
     if [[ ${TARGET_SOC} = "rv1106"  || ${TARGET_SOC} = "rv1103" ]];then
         echo "Please set GCC_COMPILER for $TARGET_SOC"
@@ -68,7 +122,7 @@ if [[ -z ${GCC_COMPILER} ]];then
         GCC_COMPILER=aarch64-linux-gnu
     fi
 fi
-echo "$GCC_COMPILER"
+
 export CC=${GCC_COMPILER}-gcc
 export CXX=${GCC_COMPILER}-g++
 
@@ -199,7 +253,7 @@ if [[ -d "${INSTALL_DIR}" ]]; then
 fi
 
 cd ${BUILD_DIR}
-cmake ../../${BUILD_DEMO_PATH} \
+${CMAKE_BIN} ../../${BUILD_DEMO_PATH} \
     -DTARGET_SOC=${TARGET_SOC} \
     -DCMAKE_SYSTEM_NAME=Linux \
     -DCMAKE_SYSTEM_PROCESSOR=${TARGET_ARCH} \
