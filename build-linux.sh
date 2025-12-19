@@ -9,7 +9,7 @@ CMAKE_TAR=${CMAKE}.tar.gz
 CMAKE_BIN=$PWD/${CMAKE}/bin/cmake
 
 echo "$0 $@"
-while getopts ":t:a:d:b:m:r:j" opt; do
+while getopts ":t:a:b:m:r:j" opt; do
   case $opt in
     t)
       TARGET_SOC=$OPTARG
@@ -24,9 +24,9 @@ while getopts ":t:a:d:b:m:r:j" opt; do
       ENABLE_ASAN=ON
       export ENABLE_ASAN=TRUE
       ;;
-    d)
-      BUILD_DEMO_NAME=$OPTARG
-      ;;
+    # d)
+    #   BUILD_DEMO_NAME=$OPTARG
+    #   ;;
     r)
       DISABLE_RGA=ON
       ;;
@@ -48,7 +48,6 @@ if [ -z ${TARGET_SOC} ] || [ -z ${BUILD_DEMO_NAME} ]; then
   echo ""
   echo "    -t : target (rk356x/rk3588/rk3576/rv1126b/rv1106/rk1808/rv1126)"
   echo "    -a : arch (aarch64/armhf)"
-  echo "    -d : demo name"
   echo "    -b : build_type(Debug/Release)"
   echo "    -m : enable address sanitizer, build_type need set to Debug"
   echo "    -r : disable rga, use cpu resize image"
@@ -64,6 +63,21 @@ fi
 if echo ${TARGET_SOC} | grep -q "rv" ;then
     echo "Not support RV soc"
     exit
+fi
+
+if [ ! -d ${CMAKE} ];then
+	if [ ! -f ${CMAKE_TAR} ];then
+		wget https://githubproxy.cc/https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/${CMAKE_TAR}
+	fi
+  if ! tar -tzf "${CMAKE_TAR}" > /dev/null 2>&1; then
+      rm -f "${CMAKE_TAR}"
+      echo "${CMAKE_TAR} is not a valid tar.gz file, remove ${CMAKE_TAR}"
+      exit 1
+  fi
+	if [ -f ${CMAKE_TAR} ];then
+		tar -zxf ${CMAKE_TAR}
+		rm ${CMAKE_TAR}
+	fi
 fi
 
 if [ ${TARGET_ARCH} = "aarch64" ];then
@@ -96,20 +110,6 @@ elif [ ${TARGET_ARCH} = "armhf" ];then
     GCC_COMPILER=$PWD/gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf/bin/arm-linux-gnueabihf
 fi
 
-if [ ! -d ${CMAKE} ];then
-	if [ ! -f ${CMAKE_TAR} ];then
-		wget https://githubproxy.cc/https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/${CMAKE_TAR}
-	fi
-  if ! tar -tzf "${CMAKE_TAR}" > /dev/null 2>&1; then
-      rm -f "${CMAKE_TAR}"
-      echo "${CMAKE_TAR} is not a valid tar.gz file, remove ${CMAKE_TAR}"
-      exit 1
-  fi
-	if [ -f ${CMAKE_TAR} ];then
-		tar -zxf ${CMAKE_TAR}
-		rm ${CMAKE_TAR}
-	fi
-fi
 
 if [[ -z ${GCC_COMPILER} ]];then
     if [[ ${TARGET_SOC} = "rv1106"  || ${TARGET_SOC} = "rv1103" ]];then
@@ -153,32 +153,6 @@ if [[ -z ${DISABLE_LIBJPEG} ]];then
     DISABLE_LIBJPEG=OFF
 fi
 
-for demo_path in `find examples -name ${BUILD_DEMO_NAME}`
-do
-    if [ -d "$demo_path/cpp" ]
-    then
-        BUILD_DEMO_PATH="$demo_path/cpp"
-        break;
-    fi
-done
-
-if [[ -z "${BUILD_DEMO_PATH}" ]]
-then
-    echo "Cannot find demo: ${BUILD_DEMO_NAME}, only support:"
-
-    for demo_path in `find examples -name cpp`
-    do
-        if [ -d "$demo_path" ]
-        then
-            dname=`dirname "$demo_path"`
-            name=`basename $dname`
-            echo "$name"
-        fi
-    done
-    echo "rv1106_rv1103 only support: mobilenet and yolov5/6/7/8/x"
-    exit
-fi
-
 case ${TARGET_SOC} in
     rk356x)
         ;;
@@ -219,62 +193,73 @@ case ${TARGET_SOC} in
         ;;
 esac
 
-TARGET_SDK="rknn_${BUILD_DEMO_NAME}_demo"
+for prj_itm in $PWD/src/*; do
+    echo "=====> ${prj_itm}"
+    if [ -d "$prj_itm/cpp" ]; then
 
-TARGET_PLATFORM=${TARGET_SOC}_linux
-if [[ -n ${TARGET_ARCH} ]];then
-TARGET_PLATFORM=${TARGET_PLATFORM}_${TARGET_ARCH}
-fi
-ROOT_PWD=$( cd "$( dirname $0 )" && cd -P "$( dirname "$SOURCE" )" && pwd )
-INSTALL_DIR=${ROOT_PWD}/install/${TARGET_PLATFORM}/${TARGET_SDK}
-BUILD_DIR=${ROOT_PWD}/build/build_${TARGET_SDK}_${TARGET_PLATFORM}_${BUILD_TYPE}
+        BUILD_DEMO_NAME=`basename ${prj_itm}`
+    
+        BUILD_DEMO_PATH="${prj_itm}/cpp"
+        TARGET_SDK="rknn_${BUILD_DEMO_NAME}_demo"
 
-echo "==================================="
-echo "BUILD_DEMO_NAME=${BUILD_DEMO_NAME}"
-echo "BUILD_DEMO_PATH=${BUILD_DEMO_PATH}"
-echo "TARGET_SOC=${TARGET_SOC}"
-echo "TARGET_ARCH=${TARGET_ARCH}"
-echo "BUILD_TYPE=${BUILD_TYPE}"
-echo "ENABLE_ASAN=${ENABLE_ASAN}"
-echo "DISABLE_RGA=${DISABLE_RGA}"
-echo "DISABLE_LIBJPEG=${DISABLE_LIBJPEG}"
-echo "INSTALL_DIR=${INSTALL_DIR}"
-echo "BUILD_DIR=${BUILD_DIR}"
-echo "CC=${CC}"
-echo "CXX=${CXX}"
-echo "==================================="
+        TARGET_PLATFORM=""
+        TARGET_PLATFORM=${TARGET_SOC}_android
+        if [[ -n ${TARGET_ARCH} ]];then
+            TARGET_PLATFORM=${TARGET_PLATFORM}_${TARGET_ARCH}
+        fi
+        ROOT_PWD=$( cd "$( dirname $0 )" && cd -P "$( dirname "$SOURCE" )" && pwd )
+        INSTALL_DIR=${ROOT_PWD}/install/${TARGET_PLATFORM}/${TARGET_SDK}
+        BUILD_DIR=${ROOT_PWD}/build/build_${TARGET_SDK}_${TARGET_PLATFORM}_${BUILD_TYPE}
 
-if [[ ! -d "${BUILD_DIR}" ]]; then
-  mkdir -p ${BUILD_DIR}
-fi
+        echo "==================================="
+        echo "BUILD_DEMO_NAME=${BUILD_DEMO_NAME}"
+        echo "BUILD_DEMO_PATH=${BUILD_DEMO_PATH}"
+        echo "TARGET_SOC=${TARGET_SOC}"
+        echo "TARGET_ARCH=${TARGET_ARCH}"
+        echo "BUILD_TYPE=${BUILD_TYPE}"
+        echo "ENABLE_ASAN=${ENABLE_ASAN}"
+        echo "DISABLE_RGA=${DISABLE_RGA}"
+        echo "DISABLE_LIBJPEG=${DISABLE_LIBJPEG}"
+        echo "INSTALL_DIR=${INSTALL_DIR}"
+        echo "BUILD_DIR=${BUILD_DIR}"
+        echo "ANDROID_NDK_PATH=${ANDROID_NDK_PATH}"
+        echo "==================================="
 
-if [[ -d "${INSTALL_DIR}" ]]; then
-  rm -rf ${INSTALL_DIR}
-fi
+        if [[ ! -d "${BUILD_DIR}" ]]; then
+          mkdir -p ${BUILD_DIR}
+        fi
 
-cd ${BUILD_DIR}
-${CMAKE_BIN} ../../${BUILD_DEMO_PATH} \
-    -DTARGET_SOC=${TARGET_SOC} \
-    -DCMAKE_SYSTEM_NAME=Linux \
-    -DCMAKE_SYSTEM_PROCESSOR=${TARGET_ARCH} \
-    -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-    -DENABLE_ASAN=${ENABLE_ASAN} \
-    -DDISABLE_RGA=${DISABLE_RGA} \
-    -DDISABLE_LIBJPEG=${DISABLE_LIBJPEG} \
-    -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}
-make -j4
-make install
+        if [[ -d "${INSTALL_DIR}" ]]; then
+          rm -rf ${INSTALL_DIR}
+        fi
 
-# Check if there is a rknn model in the install directory
-suffix=".rknn"
-shopt -s nullglob
-if [ -d "$INSTALL_DIR" ]; then
-    files=("$INSTALL_DIR/model/"/*"$suffix")
-    shopt -u nullglob
+        cd ${BUILD_DIR}
+        ${CMAKE_BIN} ${BUILD_DEMO_PATH} \
+            -DTARGET_SOC=${TARGET_SOC} \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=${TARGET_ARCH} \
+            -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+            -DENABLE_ASAN=${ENABLE_ASAN} \
+            -DDISABLE_RGA=${DISABLE_RGA} \
+            -DDISABLE_LIBJPEG=${DISABLE_LIBJPEG} \
+            -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}
+        # make VERBOSE=1
+        make -j4
+        make install
+        cd -
+        # Check if there is a rknn model in the install directory
+        suffix=".rknn"
+        shopt -s nullglob
+        if [ -d "$INSTALL_DIR" ]; then
+            files=("$INSTALL_DIR/model/"/*"$suffix")
+            shopt -u nullglob
 
-    if [ ${#files[@]} -le 0 ]; then
-        echo -e "\e[91mThe RKNN model can not be found in \"$INSTALL_DIR/model\", please check!\e[0m"
+            if [ ${#files[@]} -le 0 ]; then
+                echo -e "\e[91mThe RKNN model can not be found in \"$INSTALL_DIR/model\", please check!\e[0m"
+            fi
+        else
+            echo -e "\e[91mInstall directory \"$INSTALL_DIR\" does not exist, please check!\e[0m"
+        fi
+
     fi
-else
-    echo -e "\e[91mInstall directory \"$INSTALL_DIR\" does not exist, please check!\e[0m"
-fi
+done
