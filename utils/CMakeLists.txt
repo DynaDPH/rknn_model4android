@@ -16,6 +16,13 @@ target_include_directories(imagedrawing PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+add_library(busuds STATIC
+    uds_bus.c
+)
+target_include_directories(busuds PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 if(DISABLE_RGA AND NOT (TARGET_SOC STREQUAL "rv1106" OR TARGET_SOC STREQUAL "rv1103" OR TARGET_SOC STREQUAL "rv1103b"))
     add_definitions(-DDISABLE_RGA)
 endif ()

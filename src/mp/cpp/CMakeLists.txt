@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(rknn_clip_demo)
+project(mp_dispatch)
+
+option(CLIP_CLIENT_DEMO "compile clip_client_demo" ON)
+
+if (CLIP_CLIENT_DEMO)
+    set(TEST_CLIP "clip_client_demo")
+endif ()
 
 if (ENABLE_ASAN)
 	message(STATUS "BUILD WITH ADDRESS SANITIZER")
@@ -16,50 +22,41 @@ set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
 
 file(GLOB SRCS ${CMAKE_CURRENT_SOURCE_DIR}/*.cc)
 
-include_directories(${CMAKE_SOURCE_DIR}/tokenizer)
-include_directories(${CMAKE_SOURCE_DIR}/rknpu2/rknn_clip_utils)
-
-set(clip_file rknpu2/clip.cc)
-set(rknn_clip_utils rknpu2/rknn_clip_utils/rknn_clip_utils.cc)
-set(clip_tokenizer tokenizer/clip_tokenizer.cpp)
-
 add_executable(${PROJECT_NAME}
     main.cc
-	postprocess.cc
-    ${clip_file}
-    ${rknn_clip_utils}
-	${clip_tokenizer}
 )
 
 target_link_libraries(${PROJECT_NAME}
-	imageutils
-    fileutils
     busuds
-    ${LIBRKNNRT}
-    dl
 )
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Android")
-    target_link_libraries(${PROJECT_NAME}
-    log
-    ${LIBJSONC}
-)
-endif()
+if (CLIP_CLIENT_DEMO)
+    add_executable(${TEST_CLIP}
+        test_clip_client.cc
+    )
+    target_link_libraries(${TEST_CLIP}
+        busuds
+        ${LIBJSONC}
+    )
+    target_include_directories(${TEST_CLIP} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${LIBJSONCFILE_INCLUDES}
+    )
+    install(TARGETS ${TEST_CLIP} DESTINATION .)
+endif ()
+
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(${PROJECT_NAME}
+        pthread
+)
+    target_link_libraries(clip_client_demo
         pthread
 )
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${LIBRKNNRT_INCLUDES}
-    ${LIBJSONCFILE_INCLUDES}
 )
 
 install(TARGETS ${PROJECT_NAME} DESTINATION .)
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../model/text.txt DESTINATION ./model)
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../model/dog_224x224.jpg DESTINATION ./model)
-file(GLOB RKNN_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/*.rknn")
-install(FILES ${RKNN_FILES} DESTINATION model)
