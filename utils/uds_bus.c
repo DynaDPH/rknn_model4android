@@ -796,7 +796,7 @@ err:
   return ret;
 }
 
-static void *clip_call(int src_fd, uint32_t data_size, void *msg_data) {
+void *clip_call(int src_fd, uint32_t data_size, void *msg_data) {
   LOG("Received clip call from socket %d", src_fd);
   return NULL;
 }
