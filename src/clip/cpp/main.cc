@@ -28,11 +28,15 @@
 #include "uds_bus.h"
 
 #define PATH_LEN 256
+
 struct option_s {
   char image_model_path[PATH_LEN + 1];
   char text_model_path[PATH_LEN + 1];
   char text_path[PATH_LEN + 1];
   char uds_path[PATH_LEN + 1];
+
+  uint8_t *data;
+  uint32_t data_size;
 };
 
 struct clip_req_s {
@@ -52,41 +56,66 @@ struct clip_resp_s {
 };
 
 void free_clip_req(struct clip_req_s *msg) {
+  if (msg == NULL) return;
+  
   for (int i = 0; i < msg->image_count; i++) {
-    free(msg->image_path[i]);
+    if (msg->image_path[i] != NULL) {
+      free(msg->image_path[i]);
+      msg->image_path[i] = NULL;
+    }
   }
   free(msg);
 }
 
 void dump_clip_req(struct clip_req_s *msg) {
+  if (msg == NULL) {
+    printf("clip_req is NULL\n");
+    return;
+  }
+  
   printf("image_count: %d\n", msg->image_count);
   for (int i = 0; i < msg->image_count; i++) {
-    printf("image_path[%d]: %s\n", i, msg->image_path[i]);
+    if (msg->image_path[i] != NULL) {
+      printf("image_path[%d]: %s\n", i, msg->image_path[i]);
+    }
   }
 }
 
 void add_clip_resp(struct clip_resp_s *resp, const char *image_path,
                    const char *text, float score) {
-  struct images *img = NULL;
-
-  img = (struct images *)malloc(sizeof(struct images));
-  if (img != NULL) {
-    strncpy(img->image, image_path, PATH_LEN);
-    strncpy(img->text, text, PATH_LEN);
-    img->score = score;
-    if (resp->image_count < MAX_IMAGE_COUNT) {
-      resp->images[resp->image_count++] = img;
-    } else {
-      free(img);
-      LOG("clip_resp: image_count > MAX_IMAGE_COUNT");
-    }
+  if (resp == NULL || image_path == NULL || text == NULL) {
+    LOG("Invalid parameters for add_clip_resp");
+    return;
   }
+
+  if (resp->image_count >= MAX_IMAGE_COUNT) {
+    LOG("clip_resp: image_count >= MAX_IMAGE_COUNT");
+    return;
+  }
+
+  struct images *img = (struct images *)malloc(sizeof(struct images));
+  if (img == NULL) {
+    LOG("Failed to allocate memory for images");
+    return;
+  }
+
+  strncpy(img->image, image_path, PATH_LEN - 1);
+  img->image[PATH_LEN - 1] = '\0';
+  strncpy(img->text, text, PATH_LEN - 1);
+  img->text[PATH_LEN - 1] = '\0';
+  img->score = score;
+  
+  resp->images[resp->image_count++] = img;
 }
 
 void free_clip_resp(struct clip_resp_s *resp) {
-  int i;
-  for (i = 0; i < resp->image_count; i++) {
-    free(resp->images[i]);
+  if (resp == NULL) return;
+  
+  for (int i = 0; i < resp->image_count; i++) {
+    if (resp->images[i] != NULL) {
+      free(resp->images[i]);
+      resp->images[i] = NULL;
+    }
   }
   free(resp);
 }
@@ -98,35 +127,81 @@ static void help_guide(char *prog_name) {
   printf("--text-model-path,-t load text model path\n");
   printf("--labels,-l load text path\n");
   printf("--unix-domain-socket,-u connect UDS\n");
+  printf("--data load data\n");
+  printf("--data-size load data size\n");
   printf("--help, -h  help guide\n");
 }
 
 static int parser_option(struct option_s *uopt, int argc, char **argv) {
+  if (uopt == NULL || argc == 0 || argv == NULL) {
+    LOG("Invalid parameters for parser_option");
+    return -1;
+  }
+
   int opt = 0;
+  struct option longopt[] = {
+      {"image-model-path", required_argument, NULL, 'i'},
+      {"text-model-path", required_argument, NULL, 't'},
+      {"help", no_argument, NULL, 'h'},
+      {"labels", required_argument, NULL, 'l'},
+      {"unix-domain-socket", required_argument, NULL, 'u'},
+      {"data", required_argument, NULL, 'd'},
+      {"data-size", required_argument, NULL, 's'},
+      {NULL, 0, NULL, 0}};
 
-  struct option longopt[] = {{"image-model-path", required_argument, NULL, 'i'},
-                             {"text-model-path", required_argument, NULL, 't'},
-                             {"help", no_argument, NULL, 'h'},
-                             {NULL, 0, NULL, 0}};
-
-  while ((opt = getopt_long(argc, argv, "i:t:h", longopt, NULL)) != -1) {
+  while ((opt = getopt_long(argc, argv, "i:t:hl:u:d:s:", longopt, NULL)) != -1) {
     switch (opt) {
       case 'i': {
-        strncpy(uopt->image_model_path, optarg, sizeof(uopt->image_model_path));
+        if (optarg) {
+          strncpy(uopt->image_model_path, optarg, sizeof(uopt->image_model_path) - 1);
+          uopt->image_model_path[sizeof(uopt->image_model_path) - 1] = '\0';
+        }
       } break;
       case 't': {
-        strncpy(uopt->text_model_path, optarg, sizeof(uopt->text_model_path));
+        if (optarg) {
+          strncpy(uopt->text_model_path, optarg, sizeof(uopt->text_model_path) - 1);
+          uopt->text_model_path[sizeof(uopt->text_model_path) - 1] = '\0';
+        }
       } break;
       case 'l': {
-        strncpy(uopt->text_path, optarg, sizeof(uopt->text_path));
+        if (optarg) {
+          strncpy(uopt->text_path, optarg, sizeof(uopt->text_path) - 1);
+          uopt->text_path[sizeof(uopt->text_path) - 1] = '\0';
+        }
       } break;
       case 'u': {
-        strncpy(uopt->uds_path, optarg, sizeof(uopt->uds_path));
+        if (optarg) {
+          strncpy(uopt->uds_path, optarg, sizeof(uopt->uds_path) - 1);
+          uopt->uds_path[sizeof(uopt->uds_path) - 1] = '\0';
+        }
+      } break;
+      case 'd': {
+        if (optarg) {
+          int len = strlen(optarg);
+          uopt->data = (uint8_t *)malloc(len + 1);
+          if (uopt->data != NULL) {
+            memcpy(uopt->data, optarg, len);
+            uopt->data[len] = '\0';
+            uopt->data_size = len + 1;
+          } else {
+            LOG("Failed to allocate memory for data");
+            return -1;
+          }
+        }
+      } break;
+      case 's': {
+        if (optarg) {
+          uopt->data_size = atoi(optarg);
+        }
       } break;
       case 'h': {
         help_guide(argv[0]);
         exit(0);
       } break;
+      default: {
+        help_guide(argv[0]);
+        return -1;
+      }
     }
   }
   return 0;
@@ -151,6 +226,7 @@ static struct clip_req_s *parser_mgs_data(uint8_t *data) {
 
   msg = (struct clip_req_s *)malloc(sizeof(struct clip_req_s));
   if (msg == NULL) {
+    LOG("Failed to allocate memory for clip_req_s");
     goto end;
   }
 
@@ -177,12 +253,15 @@ static struct clip_req_s *parser_mgs_data(uint8_t *data) {
         if (msg->image_path[i] != NULL) {
           strcpy(msg->image_path[i], str_val);
           msg->image_count++;
+        } else {
+          LOG("Failed to allocate memory for image path[%d]", i);
         }
       }
     }
   }
   dump_clip_req(msg);
   ret = msg;
+  
 end:
   if (ret == NULL) {
     if (msg != NULL) {
@@ -192,8 +271,9 @@ end:
   if (json_obj != NULL) {
     json_object_put(json_obj);
   }
-  return msg;
+  return ret;
 }
+
 static uint8_t *format_clip_resp(struct clip_resp_s *clip_message_resp,
                                  uint32_t *size) {
   uint8_t *result = NULL;
@@ -207,19 +287,25 @@ static uint8_t *format_clip_resp(struct clip_resp_s *clip_message_resp,
   int i = 0;
 
   if (clip_message_resp == NULL || size == NULL) {
+    LOG("Invalid parameters for format_clip_resp");
     goto error;
   }
 
   json_array = json_object_new_array();
   if (json_array == NULL) {
+    LOG("Failed to create JSON array");
     goto error;
   }
 
   for (i = 0; i < clip_message_resp->image_count; i++) {
+    if (clip_message_resp->images[i] == NULL) continue;
+    
     json_item = json_object_new_object();
     if (json_item == NULL) {
+      LOG("Failed to create JSON item for index %d", i);
       goto error;
     }
+    
     json_image = json_object_new_string(clip_message_resp->images[i]->image);
     json_object_object_add(json_item, "image", json_image);
 
@@ -230,17 +316,19 @@ static uint8_t *format_clip_resp(struct clip_resp_s *clip_message_resp,
     json_object_object_add(json_item, "score", json_score);
 
     json_object_array_add(json_array, json_item);
-    json_item = NULL;
+    json_item = NULL; // Ownership transferred to array
   }
 
   json_str = json_object_to_json_string(json_array);
   if (json_str == NULL) {
+    LOG("Failed to convert JSON to string");
     goto error;
   }
 
   str_len = strlen(json_str);
   result = (uint8_t *)malloc(str_len + 1);
   if (result == NULL) {
+    LOG("Failed to allocate memory for result");
     goto error;
   }
 
@@ -269,35 +357,172 @@ cleanup:
 static int clip(struct option_s *opt, rknn_app_context_t *rknn_app_ctx,
                 char **input_texts, const char *image_path,
                 struct images *img) {
+  if (opt == NULL || rknn_app_ctx == NULL || input_texts == NULL || 
+      image_path == NULL || img == NULL) {
+    LOG("Invalid parameters for clip");
+    return -1;
+  }
+  
   int ret = -1;
   image_buffer_t src_image = {0};
-  int text_lines = -1;
   clip_res out_res = {0};
 
   memset(&src_image, 0, sizeof(image_buffer_t));
   ret = read_image(image_path, &src_image);
   if (ret != 0) {
-    printf("read image fail! ret=%d image_path=%s\n", ret, image_path);
+    LOG("read image fail! ret=%d image_path=%s", ret, image_path);
     ret = -1;
     goto end;
   }
 
-  ret = inference_clip_model(rknn_app_ctx, &src_image, input_texts, text_lines,
-                             &out_res);
+  ret = inference_clip_model(rknn_app_ctx, &src_image, input_texts, -1, &out_res);
   if (ret != 0) {
-    printf("inference_clip_model fail! ret=%d\n", ret);
+    LOG("inference_clip_model fail! ret=%d", ret);
     ret = -1;
     goto end;
   }
-  strncpy(img->image, image_path, sizeof(img->image));
-  strncpy(img->text, input_texts[out_res.text_index], sizeof(img->text));
+  
+  strncpy(img->image, image_path, PATH_LEN - 1);
+  img->image[PATH_LEN - 1] = '\0';
+  strncpy(img->text, input_texts[out_res.text_index], PATH_LEN - 1);
+  img->text[PATH_LEN - 1] = '\0';
   img->score = out_res.score;
   ret = 0;
+
 end:
   if (src_image.virt_addr != NULL) {
     free(src_image.virt_addr);
   }
   return ret;
+}
+
+// 通用处理函数：处理请求并生成响应
+static struct clip_resp_s* process_clip_request(struct clip_req_s *clip_req,
+                                                struct option_s *opt,
+                                                rknn_app_context_t *rknn_app_ctx,
+                                                char **input_texts) {
+  if (clip_req == NULL || opt == NULL || rknn_app_ctx == NULL || input_texts == NULL) {
+    LOG("Invalid parameters for process_clip_request");
+    return NULL;
+  }
+
+  // Initialize response
+  struct clip_resp_s *clip_resp = (struct clip_resp_s *)malloc(sizeof(struct clip_resp_s));
+  if (clip_resp == NULL) {
+    LOG("Failed to allocate memory for clip_resp");
+    return NULL;
+  }
+  memset(clip_resp, 0, sizeof(struct clip_resp_s));
+
+  // Process each image
+  int success_count = 0;
+  for (int i = 0; i < clip_req->image_count && i < MAX_IMAGE_COUNT; i++) {
+    struct images *img = (struct images *)malloc(sizeof(struct images));
+    if (img == NULL) {
+      LOG("Failed to allocate memory for image result at index %d", i);
+      continue; // Continue processing other images
+    }
+    
+    if (clip(opt, rknn_app_ctx, input_texts, clip_req->image_path[i], img) != 0) {
+      LOG("clip error for image: %s", clip_req->image_path[i]);
+      free(img);
+      continue; // Continue processing other images
+    }
+    
+    clip_resp->images[clip_resp->image_count++] = img;
+    success_count++;
+  }
+
+  // If no successful processing, free the response
+  if (success_count == 0) {
+    free_clip_resp(clip_resp);
+    return NULL;
+  }
+
+  return clip_resp;
+}
+
+// 发送响应的通用函数
+static int send_response(int uds_client_sockfd, struct bus_message_s *original_msg,
+                         struct clip_resp_s *clip_resp) {
+  if (uds_client_sockfd < 0 || original_msg == NULL || clip_resp == NULL) {
+    LOG("Invalid parameters for send_response");
+    return -1;
+  }
+
+  uint32_t data_size = 0;
+  uint8_t *buffer = format_clip_resp(clip_resp, &data_size);
+  if (buffer == NULL) {
+    LOG("Failed to format response");
+    return -1;
+  }
+
+  struct bus_message_s *resp_msg = bus_message_new_internal(
+      uds_client_sockfd, original_msg->header.internal.src_fd, buffer, data_size);
+  if (resp_msg) {
+    int ret = send_bus_message(uds_client_sockfd, resp_msg);
+    bus_message_free(resp_msg);
+    free(buffer);
+    return ret;
+  } else {
+    LOG("Failed to create response message");
+    free(buffer);
+    return -1;
+  }
+}
+
+// 处理命令行数据的函数
+static int process_command_line_data(struct option_s *opt,
+                                    rknn_app_context_t *rknn_app_ctx,
+                                    char **input_texts) {
+  if (opt == NULL || rknn_app_ctx == NULL || input_texts == NULL || opt->data == NULL) {
+    LOG("Invalid parameters for process_command_line_data");
+    return -1;
+  }
+
+  LOG("Processing initial data from command line");
+  struct clip_req_s *clip_req = parser_mgs_data(opt->data);
+  if (clip_req == NULL) {
+    LOG("Failed to parse command line data");
+    return -1;
+  }
+
+  dump_clip_req(clip_req);
+
+  // Validate image count
+  if (clip_req->image_count <= 0 || clip_req->image_count > MAX_IMAGE_COUNT) {
+    LOG("Invalid image count: %d", clip_req->image_count);
+    free_clip_req(clip_req);
+    return -1;
+  }
+
+  // Process the request
+  struct clip_resp_s *clip_resp = process_clip_request(clip_req, opt, rknn_app_ctx, input_texts);
+  if (clip_resp == NULL) {
+    LOG("Failed to process command line request");
+    free_clip_req(clip_req);
+    return -1;
+  }
+
+  // Format response for command line output
+  uint32_t data_size = 0;
+  uint8_t *buffer = format_clip_resp(clip_resp, &data_size);
+  if (buffer != NULL) {
+    // Print result to stdout for command-line usage
+    printf("%s\n", (char*)buffer);
+    free(buffer);
+  } else {
+    LOG("Failed to format response for command-line data");
+    free_clip_resp(clip_resp);
+    free_clip_req(clip_req);
+    return -1;
+  }
+
+  // Cleanup
+  free_clip_resp(clip_resp);
+  free_clip_req(clip_req);
+
+  return 0;
 }
 
 /*-------------------------------------------
@@ -311,109 +536,143 @@ int main(int argc, char **argv) {
   int uds_client_sockfd = -1;
   char **input_texts = NULL;
   int text_lines = -1;
-  int ret;
+  int ret = 0;
   rknn_app_context_t rknn_app_ctx = {0};
-  uint32_t data_size = 0;
-  uint8_t *buffer = NULL;
 
-  parser_option(&opt, argc, argv);
+  // Parse command line options
+  if (parser_option(&opt, argc, argv) != 0) {
+    LOG("Failed to parse options");
+    ret = -1;
+    goto out;
+  }
 
   if (!strlen(opt.image_model_path) || !strlen(opt.text_model_path)) {
     help_guide(argv[0]);
-    exit(0);
+    ret = -1;
+    goto out;
   }
 
-  ret =
-      init_clip_model(opt.image_model_path, opt.text_model_path, &rknn_app_ctx);
+  // Initialize CLIP model
+  ret = init_clip_model(opt.image_model_path, opt.text_model_path, &rknn_app_ctx);
   if (ret != 0) {
-    printf(
-        "init_clip_model fail! ret=%d img_model_path=%s text_model_path=%s\n",
+    LOG("init_clip_model fail! ret=%d img_model_path=%s text_model_path=%s", 
         ret, opt.image_model_path, opt.text_model_path);
     goto out;
   }
+
+  // Load input texts
   input_texts = read_lines_from_file(opt.text_path, &text_lines);
   if (input_texts == NULL) {
-    printf("read input texts fail! ret=%d text_path=%s\n", ret, opt.text_path);
+    LOG("read input texts fail! text_path=%s", opt.text_path);
+    ret = -1;
     goto out;
   }
 
-  uds_client_sockfd = uds_client_create(UDS_PATH);
-  if (uds_client_sockfd < 0) {
-    printf("uds_client_create fail! uds_path=%s\n", UDS_PATH);
-    return -1;
+  // Process initial data if provided via command line
+  if (opt.data) {
+    ret = process_command_line_data(&opt, &rknn_app_ctx, input_texts);
+    if (ret != 0) {
+      LOG("Failed to process command line data");
+      goto out;
+    }
+    
+    // If only processing command-line data, exit after processing
+    if (!strlen(opt.uds_path)) {
+      LOG("Command-line data processed, exiting");
+      goto out;
+    }
   }
 
-  msg = bus_message_new_from_register(UDS_CALL_TYPE_CLIP);  // 注册消息
-  if (msg == NULL) {
-    goto out;
-  }
-  if (send_bus_message(uds_client_sockfd, msg) < 0) {
-    printf("Register message send fail!\n");
-    goto out;
-  }
+  // Create UDS client only if UDS path is provided
+  if (strlen(opt.uds_path)) {
+    uds_client_sockfd = uds_client_create(opt.uds_path);
+    if (uds_client_sockfd < 0) {
+      LOG("uds_client_create fail! uds_path=%s", opt.uds_path);
+      ret = -1;
+      goto out;
+    }
 
-  while (1) {
-    msg = recv_bus_message(uds_client_sockfd, -1);
+    // Register with UDS server
+    msg = bus_message_new_from_register(UDS_CALL_TYPE_CLIP);
     if (msg == NULL) {
-      goto end;
+      LOG("Failed to create register message");
+      ret = -1;
+      goto out;
     }
-
-    if (msg->magic != UDS_MESSAGE_MAGIC_INTERNAL) {
-      goto end;
-    }
-
-    clip_req = parser_mgs_data(msg->msg_data);
-    if (clip_resp == NULL) {
-      goto end;
-    }
-
-    clip_resp = (struct clip_resp_s *)malloc(sizeof(struct clip_resp_s));
-    if (clip_resp == NULL) {
-      goto end;
-    }
-
-    for (size_t i = 0; i < clip_resp->image_count && i < MAX_IMAGE_COUNT; i++) {
-      clip_resp->images[i] = (struct images *)malloc(sizeof(struct images));
-      if (clip(&opt, &rknn_app_ctx, input_texts, clip_req->image_path[i],
-               clip_resp->images[i]) != 0) {
-        LOG("clip error");
-        goto out;
-      }
-    }
-
-    buffer = format_clip_resp(clip_resp, &data_size);
-    if (buffer != NULL) {
-      struct bus_message_s *resp_msg = bus_message_new_internal(
-          uds_client_sockfd, msg->header.internal.src_fd, buffer, data_size);
-      if (resp_msg) {
-        send_bus_message(uds_client_sockfd, resp_msg);
-        bus_message_free(resp_msg);
-      }
-    }
-  end:
-    if (msg) {
+    
+    if (send_bus_message(uds_client_sockfd, msg) < 0) {
+      LOG("Register message send fail!");
       bus_message_free(msg);
-      msg = NULL;
+      ret = -1;
+      goto out;
     }
-    if (clip_req) {
-      free_clip_req(clip_req);
-      clip_req = NULL;
+    bus_message_free(msg);
+    msg = NULL;
+
+    // Main event loop
+    while (1) {
+      // Receive message from UDS server
+      msg = recv_bus_message(uds_client_sockfd, -1);
+      if (msg == NULL) {
+        LOG("Failed to receive message from UDS server");
+        continue; // Keep running
+      }
+
+      // Validate message type
+      if (msg->magic != UDS_MESSAGE_MAGIC_INTERNAL) {
+        LOG("Invalid message magic: %d", msg->magic);
+        bus_message_free(msg);
+        continue; // Keep running
+      }
+
+      // Parse request data
+      clip_req = parser_mgs_data(msg->msg_data);
+      if (clip_req == NULL) {
+        LOG("Failed to parse message data");
+        bus_message_free(msg);
+        continue; // Keep running
+      }
+
+      // Validate image count
+      if (clip_req->image_count <= 0 || clip_req->image_count > MAX_IMAGE_COUNT) {
+        LOG("Invalid image count: %d", clip_req->image_count);
+        free_clip_req(clip_req);
+        bus_message_free(msg);
+        continue; // Keep running
+      }
+
+      // Process the request using the common function
+      clip_resp = process_clip_request(clip_req, &opt, &rknn_app_ctx, input_texts);
+      if (clip_resp != NULL) {
+        // Send response using the common function
+        send_response(uds_client_sockfd, msg, clip_resp);
+        free_clip_resp(clip_resp);
+        clip_resp = NULL;
+      } else {
+        LOG("Failed to process request or no successful results");
+      }
+
+      // Cleanup for this iteration
+      if (msg) {
+        bus_message_free(msg);
+        msg = NULL;
+      }
+      if (clip_req) {
+        free_clip_req(clip_req);
+        clip_req = NULL;
+      }
     }
-    if (clip_resp) {
-      free_clip_resp(clip_resp);
-      clip_resp = NULL;
-    }
-    if (buffer) {
-      free(buffer);
-      buffer = NULL;
-    }
-    sleep(1);
+  } else {
+    LOG("No UDS path provided, exiting after command-line processing");
   }
 
 out:
-  ret = release_clip_model(&rknn_app_ctx);
-  if (ret != 0) {
-    printf("release_clip_model fail! ret=%d\n", ret);
+  // Cleanup resources
+  if (ret == 0) {
+    ret = release_clip_model(&rknn_app_ctx);
+    if (ret != 0) {
+      LOG("release_clip_model fail! ret=%d", ret);
+    }
   }
 
   if (input_texts != NULL) {
@@ -423,18 +682,20 @@ out:
   if (uds_client_sockfd >= 0) {
     close(uds_client_sockfd);
   }
+  
+  // Free any remaining resources
   if (clip_req) {
     free_clip_req(clip_req);
   }
   if (clip_resp) {
     free_clip_resp(clip_resp);
   }
-  if (buffer) {
-    free(buffer);
-  }
   if (msg) {
     bus_message_free(msg);
   }
+  if (opt.data) {
+    free(opt.data);
+  }
 
-  return 0;
+  return ret;
 }

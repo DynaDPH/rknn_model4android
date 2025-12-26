@@ -28,6 +28,11 @@ enum uds_message_type_e {
   UDS_MESSAGE_TYPE_MAX,
 };
 
+#define CLIP_PROCESS "rknn_clip_demo"
+#define CLIP_IMAGE_MODEL_PATH "clip_model.rknn"
+#define CLIP_TEXT_MODEL_PATH "clip_model_txt.rknn"
+#define CLIP_LABELS_PATH "text.txt"
+
 // 添加其它算法调用，需要在这新增
 enum uds_call_type_e {
   UDS_CALL_TYPE_CLIP = 0,
