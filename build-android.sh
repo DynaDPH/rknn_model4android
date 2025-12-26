@@ -154,6 +154,12 @@ case ${TARGET_SOC} in
         ;;
 esac
 
+
+INSTALL_ROOT=$PWD/install/rknn_${TARGET_SOC}_${TARGET_ARCH}_${BUILD_TYPE}
+# INSTALL_LIB=${INSTALL_ROOT}/lib
+# INSTALL_MODEL=${INSTALL_ROOT}/model
+# INSTALL_BIN=${INSTALL_ROOT}/bin
+
 for prj_itm in $PWD/src/*; do
     echo "=====> ${prj_itm}"
     if [ -d "$prj_itm/cpp" ]; then
@@ -226,5 +232,13 @@ for prj_itm in $PWD/src/*; do
             echo -e "\e[91mInstall directory \"$INSTALL_DIR\" does not exist, please check!\e[0m"
         fi
 
+        echo "install directory: $INSTALL_ROOT"
+        if [ -d ${INSTALL_DIR} ];then
+          echo "cp install directory to : $INSTALL_ROOT"
+          if [ ! -d ${INSTALL_ROOT} ];then
+            mkdir -p ${INSTALL_ROOT}
+          fi
+          cp -rf ${INSTALL_DIR}/* ${INSTALL_ROOT}/
+        fi
     fi
 done
