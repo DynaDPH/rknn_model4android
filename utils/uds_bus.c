@@ -86,6 +86,7 @@ static struct bus_message_s *bus_message_get(int fd) {
   int read_size = 0;
   struct bus_message_s *msg = NULL;
   struct bus_message_s *ret = NULL;
+  uint32_t total_received = 0;
 
   msg = malloc(sizeof(struct bus_message_s));
   if (msg == NULL) {
@@ -129,7 +130,6 @@ static struct bus_message_s *bus_message_get(int fd) {
       goto end;
     }
 
-    int total_received = 0;
     while (total_received < msg->data_size) {
       int remaining = msg->data_size - total_received;
       read_size =
@@ -146,6 +146,13 @@ static struct bus_message_s *bus_message_get(int fd) {
   } else {
     msg->msg_data = NULL;
   }
+
+  if (msg->data_size != total_received) {
+    LOG("Failed to read message data from socket %d, expected %d, got %d", fd,
+        msg->data_size, total_received);
+    goto end;
+  }
+
   ret = msg;
 
 end:
@@ -801,39 +808,42 @@ static int split_cmd_args(const char *cmd_str, char **args, int max_args) {
   int arg_count = 0;
   char *token = NULL;
   int ret = -1;
+  char *save_ptr = NULL;
 
   if (cmd_str == NULL || args == NULL || max_args < 2) {
     LOG("Invalid parameters for split_cmd_args");
     goto end;
   }
 
-  buf = strdup(cmd_str);
-  if (buf == NULL) {
-    LOG("strdup failed");
+  if (strlen(cmd_str) == 0) {
+    LOG("Empty command string");
     goto end;
   }
 
-  arg_count = 0;
-  token = strtok(buf, " ");
+  buf = strdup(cmd_str);
+  if (buf == NULL) {
+    LOG("strdup failed for command: %s", cmd_str);
+    goto end;
+  }
+
+  token = strtok_r(buf, " ", &save_ptr);
   while (token != NULL && arg_count < max_args - 1) {
-    if (strlen(token) == 0) {
-      token = strtok(NULL, " ");
-      continue;
+    if (strlen(token) > 0) {
+      args[arg_count++] = strdup(token);
     }
-    args[arg_count++] = token;
-    token = strtok(NULL, " ");
+    token = strtok_r(NULL, " ", &save_ptr);
   }
   args[arg_count] = NULL;
 
   if (arg_count == 0) {
-    LOG("Empty command string");
+    LOG("No valid arguments found in command string");
     goto end;
   }
 
   ret = arg_count;
 
 end:
-  if (ret == -1 && buf != NULL) {
+  if (buf != NULL) {
     free(buf);
   }
   return ret;
@@ -933,7 +943,7 @@ end:
 }
 
 /**
- * 
+ *
  * static void help_guide(char *prog_name) {
   printf("Usage: %s [OPTIONS] [ARGS]\n", prog_name);
   printf("Options:\n");
@@ -958,18 +968,11 @@ void *clip_call(int src_fd, uint32_t data_size, uint8_t *msg_data) {
     goto end;
   }
 
-  cmd_len = strlen(CLIP_PROCESS) + 
-            strlen("--image-model-path ") + 
-            strlen(CLIP_IMAGE_MODEL_PATH) + 
-            strlen("--text-model-path ") + 
-            strlen(CLIP_TEXT_MODEL_PATH) + 
-            strlen("--labels ") + 
-            strlen(CLIP_LABELS_PATH) + 
-            strlen("--data '") + 
-            data_size + 
-            strlen("' ") + 
-            strlen("--unix-domain-socket ") + 
-            strlen(UDS_PATH) + 
+  cmd_len = strlen(CLIP_PROCESS) + strlen("--image-model-path ") +
+            strlen(CLIP_IMAGE_MODEL_PATH) + strlen("--text-model-path ") +
+            strlen(CLIP_TEXT_MODEL_PATH) + strlen("--labels ") +
+            strlen(CLIP_LABELS_PATH) + strlen("--data '") + data_size +
+            strlen("' ") + strlen("--unix-domain-socket ") + strlen(UDS_PATH) +
             64;
 
   cmd = (char *)malloc(cmd_len);
@@ -978,14 +981,11 @@ void *clip_call(int src_fd, uint32_t data_size, uint8_t *msg_data) {
     goto end;
   }
 
-  snprintf(cmd, cmd_len, 
-           "%s --image-model-path '%s' --text-model-path '%s' --labels '%s' --unix-domain-socket '%s' --data '%s'", 
-           CLIP_PROCESS, 
-           CLIP_IMAGE_MODEL_PATH, 
-           CLIP_TEXT_MODEL_PATH, 
-           CLIP_LABELS_PATH, 
-           UDS_PATH, 
-           (char *)msg_data);
+  snprintf(cmd, cmd_len,
+           "%s --image-model-path '%s' --text-model-path '%s' --labels '%s' "
+           "--unix-domain-socket '%s' --data '%s'",
+           CLIP_PROCESS, CLIP_IMAGE_MODEL_PATH, CLIP_TEXT_MODEL_PATH,
+           CLIP_LABELS_PATH, UDS_PATH, (char *)msg_data);
 
   LOG("Executing CLIP command: %s", cmd);
   pid = start_process(cmd, 0, &exit_code);
