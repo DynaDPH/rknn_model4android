@@ -19,6 +19,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/un.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "uds_bus.h"
@@ -36,6 +38,9 @@ struct option_s {
   char uds_path[PATH_LEN];
   int port;
 };
+
+struct option_s g_option = {0};
+
 static void print_usage(const char *program_name) {
   printf("Usage: %s [option]\n", program_name);
   printf("  --help               Print help and exit.\n");
@@ -74,10 +79,217 @@ static void option_get(int argc, char **argv, struct option_s *g_option) {
     }
   }
 }
+static int split_cmd_args(const char *cmd_str, char **args, int max_args) {
+  char *buf = NULL;
+  int arg_count = 0;
+  char *token = NULL;
+  int ret = -1;
+  char *save_ptr = NULL;
+
+  if (cmd_str == NULL || args == NULL || max_args < 2) {
+    LOG("Invalid parameters for split_cmd_args");
+    goto end;
+  }
+
+  if (strlen(cmd_str) == 0) {
+    LOG("Empty command string");
+    goto end;
+  }
+
+  buf = strdup(cmd_str);
+  if (buf == NULL) {
+    LOG("strdup failed for command: %s", cmd_str);
+    goto end;
+  }
+
+  token = strtok_r(buf, " ", &save_ptr);
+  while (token != NULL && arg_count < max_args - 1) {
+    if (strlen(token) > 0) {
+      args[arg_count++] = strdup(token);
+    }
+    token = strtok_r(NULL, " ", &save_ptr);
+  }
+  args[arg_count] = NULL;
+
+  if (arg_count == 0) {
+    LOG("No valid arguments found in command string");
+    goto end;
+  }
+
+  ret = arg_count;
+
+end:
+  if (buf != NULL) {
+    free(buf);
+  }
+  return ret;
+}
+
+static pid_t start_process(const char *cmd_str, int block, int *exit_code) {
+  char *args[64] = {NULL};
+  int arg_count = 0;
+  pid_t pid = -1;
+  int status = 0;
+  pid_t ret = -1;
+  int code = -1;
+  int sig = 0;
+
+  if (cmd_str == NULL || strlen(cmd_str) == 0) {
+    LOG("Command string is empty");
+    goto end;
+  }
+  if (exit_code != NULL) {
+    *exit_code = -1;
+  }
+
+  arg_count = split_cmd_args(cmd_str, args, 64);
+  if (arg_count == -1) {
+    LOG("split_cmd_args failed");
+    goto end;
+  }
+
+  pid = fork();
+  if (pid == -1) {
+    LOG("fork failed");
+    goto end;
+  }
+
+  if (pid == 0) {
+    execvp(args[0], args);
+    LOG("execvp failed");
+    exit(EXIT_FAILURE);
+  }
+
+  LOG("Child process started, PID: %d, Command: %s", pid, cmd_str);
+
+  if (block) {
+    ret = waitpid(pid, &status, 0);
+    if (ret == -1) {
+      LOG("waitpid failed");
+      goto end;
+    }
+    if (WIFEXITED(status)) {
+      code = WEXITSTATUS(status);
+      if (exit_code != NULL) {
+        *exit_code = code;
+      }
+      LOG("Child process %d exited normally, exit code: %d", pid, code);
+    } else if (WIFSIGNALED(status)) {
+      sig = WTERMSIG(status);
+      LOG("Child process %d killed by signal: %d", pid, sig);
+      if (exit_code != NULL) {
+        *exit_code = -sig;
+      }
+    }
+  }
+
+  ret = pid;
+
+end:
+  return ret;
+}
+
+static int reap_process(pid_t pid) {
+  int status = 0;
+  pid_t ret = -1;
+  int code = -1;
+  int sig = 0;
+
+  if (pid <= 0) {
+    LOG("Invalid PID: %d", pid);
+    goto end;
+  }
+
+  ret = waitpid(pid, &status, WNOHANG);
+  if (ret == -1) {
+    LOG("waitpid failed");
+    goto end;
+  } else if (ret == 0) {
+    ret = -1;  // Process still running
+    goto end;
+  }
+
+  if (WIFEXITED(status)) {
+    ret = WEXITSTATUS(status);
+  } else if (WIFSIGNALED(status)) {
+    ret = -WTERMSIG(status);
+  }
+
+end:
+  return ret;
+}
+
+/**
+ *
+ * static void help_guide(char *prog_name) {
+  printf("Usage: %s [OPTIONS] [ARGS]\n", prog_name);
+  printf("Options:\n");
+  printf("--image-model-path,-i load image model path\n");
+  printf("--text-model-path,-t load text model path\n");
+  printf("--labels,-l load text path\n");
+  printf("--unix-domain-socket,-u connect UDS\n");
+  printf("--data load data\n");
+  printf("--data-size load data size\n");
+  printf("--help, -h  help guide\n");
+}
+ */
+
+#define CLIP_PROCESS "rknn_clip_demo"
+#define CLIP_IMAGE_MODEL_PATH "clip_model.rknn"
+#define CLIP_TEXT_MODEL_PATH "clip_model_txt.rknn"
+#define CLIP_LABELS_PATH "text.txt"
+void *clip_call(int src_fd, uint32_t data_size, uint8_t *msg_data) {
+  char *cmd = NULL;
+  int cmd_len = 0;
+  pid_t pid = -1;
+  int exit_code = 0;
+  void *ret = NULL;
+
+  if (msg_data == NULL || data_size == 0) {
+    LOG("Invalid parameters for clip_call");
+    goto end;
+  }
+
+  cmd_len = strlen(CLIP_PROCESS) + strlen("--image-model-path ") +
+            strlen(CLIP_IMAGE_MODEL_PATH) + strlen("--text-model-path ") +
+            strlen(CLIP_TEXT_MODEL_PATH) + strlen("--labels ") +
+            strlen(CLIP_LABELS_PATH) + strlen("--data '") + data_size +
+            strlen("' ") + strlen("--unix-domain-socket ") +
+            strlen(g_option.uds_path) + 64;
+
+  cmd = (char *)malloc(cmd_len);
+  if (cmd == NULL) {
+    LOG("Failed to allocate memory for command");
+    goto end;
+  }
+
+  snprintf(cmd, cmd_len,
+           "%s --image-model-path '%s' --text-model-path '%s' --labels '%s' "
+           "--unix-domain-socket '%s' --data '%s'",
+           CLIP_PROCESS, CLIP_IMAGE_MODEL_PATH, CLIP_TEXT_MODEL_PATH,
+           CLIP_LABELS_PATH, g_option.uds_path, (char *)msg_data);
+
+  LOG("Executing CLIP command: %s", cmd);
+  pid = start_process(cmd, 0, &exit_code);
+
+  if (pid <= 0) {
+    LOG("Failed to start CLIP process, command: %s", cmd);
+    goto end;
+  }
+
+  LOG("CLIP process started successfully with PID: %d", pid);
+
+  ret = (void *)(intptr_t)pid;
+
+end:
+  if (cmd != NULL) {
+    free(cmd);
+  }
+  return ret;
+}
 
 int main(int argc, char **argv) {
   struct uds_server_s server = {0};
-  struct option_s g_option = {0};
 
   option_get(argc, argv, &g_option);
   if (g_option.uds_path[0] == '\0') {
@@ -94,6 +306,11 @@ int main(int argc, char **argv) {
 
   if (uds_server_create(&server, g_option.uds_path, g_option.port) < 0) {
     DEBUG("uds_server_create failed");
+  }
+
+  if (uds_register_handler(UDS_CALL_TYPE_CLIP, clip_call) < 0) {
+    DEBUG("uds_register_handler failed");
+    goto end;
   }
   uds_event_loop(&server);
 end:
