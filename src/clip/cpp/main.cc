@@ -613,6 +613,8 @@ int main(int argc, char **argv) {
     }
     bus_message_free(msg);
     msg = NULL;
+  } else {
+    LOG("No UDS path provided, running in standalone mode");
   }
 
   if (opt.data) {
