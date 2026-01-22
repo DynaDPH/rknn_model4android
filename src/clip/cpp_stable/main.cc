@@ -26,7 +26,6 @@
 #include "image_utils.h"
 #include "json-c/json.h"
 #include "uds_bus.h"
-#include "dma_alloc.h"
 
 #define PATH_LEN 256
 
@@ -38,14 +37,6 @@ struct option_s {
 
   uint8_t *data;
   uint32_t data_size;
-};
-
-// ============ 文本特征缓存结构 ============
-struct text_feature_cache_s {
-  float* features;        // 缓存的文本特征数组
-  int text_num;           // 缓存的文本数量
-  int feature_dim;        // 特征维度
-  bool initialized;       // 是否已初始化
 };
 
 struct clip_req_s {
@@ -127,30 +118,6 @@ void free_clip_resp(struct clip_resp_s *resp) {
     }
   }
   free(resp);
-}
-
-/**
- * @brief Release image buffer (supports both DMA and malloc)
- * 
- * This helper function properly releases image buffers that may
- * be allocated using DMA buffer for zero-copy operations or
- * traditional malloc.
- * 
- * @param img Image buffer to release
- */
-static void release_image_buffer(image_buffer_t* img) {
-  if (img == NULL) return;
-  
-  if (img->fd > 0 && img->virt_addr != NULL) {
-    // Release DMA buffer
-    dma_buf_free(img->size, &img->fd, img->virt_addr);
-    img->virt_addr = NULL;
-    img->fd = -1;
-  } else if (img->virt_addr != NULL) {
-    // Release malloc buffer
-    free(img->virt_addr);
-    img->virt_addr = NULL;
-  }
 }
 
 static void help_guide(char *prog_name) {
@@ -427,70 +394,8 @@ static int clip(struct option_s *opt, rknn_app_context_t *rknn_app_ctx,
   ret = 0;
 
 end:
-  release_image_buffer(&src_image);
-  return ret;
-}
-
-// ============ 使用缓存的新实现 ============
-static int clip_with_cache(struct option_s *opt, rknn_app_context_t *rknn_app_ctx,
-                           struct text_feature_cache_s *text_cache,
-                           char** input_texts,
-                           const char *image_path,
-                           struct images *img) {
-  if (opt == NULL || rknn_app_ctx == NULL || text_cache == NULL ||
-      input_texts == NULL || image_path == NULL || img == NULL) {
-    LOG("Invalid parameters for clip_with_cache");
-    return -1;
-  }
-
-  if (!text_cache->initialized) {
-    LOG("Text feature cache is not initialized");
-    return -1;
-  }
-
-  int ret = -1;
-  image_buffer_t src_image = {0};
-  clip_res out_res = {0};
-  float* img_features = NULL;
-  int img_dim = 0;
-
-  memset(&src_image, 0, sizeof(image_buffer_t));
-  ret = read_image(image_path, &src_image);
-  if (ret != 0) {
-    LOG("read image fail! ret=%d image_path=%s", ret, image_path);
-    ret = -1;
-    goto end;
-  }
-
-  // 使用新API推理图片
-  ret = inference_clip_image_only(rknn_app_ctx, &src_image, &img_features, &img_dim);
-  if (ret != 0) {
-    LOG("inference_clip_image_only fail! ret=%d", ret);
-    ret = -1;
-    goto end;
-  }
-
-  // 使用新API进行特征匹配（使用缓存的文本特征）
-  ret = clip_match(img_features, img_dim,
-                   text_cache->features, text_cache->text_num, text_cache->feature_dim,
-                   &out_res);
-  if (ret != 0) {
-    LOG("clip_match fail! ret=%d", ret);
-    ret = -1;
-    goto end;
-  }
-
-  strncpy(img->image, image_path, PATH_LEN - 1);
-  img->image[PATH_LEN - 1] = '\0';
-  strncpy(img->text, input_texts[out_res.text_index], PATH_LEN - 1);
-  img->text[PATH_LEN - 1] = '\0';
-  img->score = out_res.score;
-  ret = 0;
-
-end:
-  release_image_buffer(&src_image);
-  if (img_features != NULL) {
-    free_clip_features(img_features);
+  if (src_image.virt_addr != NULL) {
+    free(src_image.virt_addr);
   }
   return ret;
 }
@@ -543,59 +448,6 @@ static struct clip_resp_s *process_clip_request(
   return clip_resp;
 }
 
-// ============ 使用缓存的请求处理函数 ============
-static struct clip_resp_s *process_clip_request_with_cache(
-    struct clip_req_s *clip_req, struct option_s *opt,
-    rknn_app_context_t *rknn_app_ctx, struct text_feature_cache_s *text_cache,
-    char **input_texts) {
-  if (clip_req == NULL || opt == NULL || rknn_app_ctx == NULL ||
-      text_cache == NULL || input_texts == NULL) {
-    LOG("Invalid parameters for process_clip_request_with_cache");
-    return NULL;
-  }
-
-  if (!text_cache->initialized) {
-    LOG("Text feature cache is not initialized");
-    return NULL;
-  }
-
-  // Initialize response
-  struct clip_resp_s *clip_resp =
-      (struct clip_resp_s *)malloc(sizeof(struct clip_resp_s));
-  if (clip_resp == NULL) {
-    LOG("Failed to allocate memory for clip_resp");
-    return NULL;
-  }
-  memset(clip_resp, 0, sizeof(struct clip_resp_s));
-
-  // Process each image using cached text features
-  int success_count = 0;
-  for (int i = 0; i < clip_req->image_count && i < MAX_IMAGE_COUNT; i++) {
-    struct images *img = (struct images *)malloc(sizeof(struct images));
-    if (img == NULL) {
-      LOG("Failed to allocate memory for image result at index %d", i);
-      continue;
-    }
-
-    if (clip_with_cache(opt, rknn_app_ctx, text_cache, input_texts,
-                        clip_req->image_path[i], img) != 0) {
-      LOG("clip_with_cache error for image: %s", clip_req->image_path[i]);
-      free(img);
-      continue;
-    }
-
-    clip_resp->images[clip_resp->image_count++] = img;
-    success_count++;
-  }
-
-  if (success_count == 0) {
-    free_clip_resp(clip_resp);
-    return NULL;
-  }
-
-  return clip_resp;
-}
-
 // 发送响应的通用函数
 static int send_response(int uds_client_sockfd,
                          struct bus_message_s *original_msg,
@@ -619,7 +471,7 @@ static int send_response(int uds_client_sockfd,
     int ret = send_bus_message(uds_client_sockfd, resp_msg);
     bus_message_free(resp_msg);
     free(buffer);
-    return (ret > 0) ? 0 : -1;  // send_bus_message returns bytes sent, convert to 0 for success
+    return ret;
   } else {
     LOG("Failed to create response message");
     free(buffer);
@@ -630,7 +482,6 @@ static int send_response(int uds_client_sockfd,
 // 处理命令行数据并根据是否提供 UDS 路径决定发送方式
 static int process_and_send_command_line_data(struct option_s *opt,
                                               rknn_app_context_t *rknn_app_ctx,
-                                              struct text_feature_cache_s *text_cache,
                                               char **input_texts, int text_num,
                                               int uds_client_sockfd) {
   if (opt == NULL || rknn_app_ctx == NULL || input_texts == NULL ||
@@ -655,9 +506,9 @@ static int process_and_send_command_line_data(struct option_s *opt,
     return -1;
   }
 
-  // Process the request using cached text features
-  struct clip_resp_s *clip_resp = process_clip_request_with_cache(
-      clip_req, opt, rknn_app_ctx, text_cache, input_texts);
+  // Process the request
+  struct clip_resp_s *clip_resp = process_clip_request(
+      clip_req, opt, rknn_app_ctx, input_texts, text_num);
   if (clip_resp == NULL) {
     LOG("Failed to process command line request");
     free_clip_req(clip_req);
@@ -708,8 +559,6 @@ int main(int argc, char **argv) {
   int text_lines = -1;
   int ret = 0;
   rknn_app_context_t rknn_app_ctx = {0};
-  // 文本特征缓存
-  struct text_feature_cache_s text_cache = {0};
 
   // Parse command line options
   if (parser_option(&opt, argc, argv) != 0) {
@@ -742,23 +591,6 @@ int main(int argc, char **argv) {
     goto out;
   }
 
-  // ============ 初始化文本特征缓存 ============
-  LOG("Initializing text feature cache for %d labels...", text_lines);
-  ret = inference_clip_text_only(&rknn_app_ctx, input_texts, text_lines,
-                                  &text_cache.features, &text_cache.feature_dim);
-  if (ret != 0) {
-    LOG("Failed to initialize text feature cache! ret=%d", ret);
-    goto out;
-  }
-  
-  // 移除归一化，使用原始点积
-  // normalize_text_features(text_cache.features, text_lines, text_cache.feature_dim);
-  
-  text_cache.text_num = text_lines;
-  text_cache.initialized = true;
-  LOG("Text feature cache initialized: %d labels, dim=%d", 
-      text_cache.text_num, text_cache.feature_dim);
-
   if (strlen(opt.uds_path)) {
     uds_client_sockfd = uds_client_create(opt.uds_path);
     if (uds_client_sockfd < 0) {
@@ -787,7 +619,7 @@ int main(int argc, char **argv) {
   }
 
   if (opt.data) {
-    ret = process_and_send_command_line_data(&opt, &rknn_app_ctx, &text_cache, input_texts,
+    ret = process_and_send_command_line_data(&opt, &rknn_app_ctx, input_texts,
                                              text_lines, uds_client_sockfd);
     if (ret != 0) {
       LOG("Failed to process and send command line data");
@@ -828,9 +660,9 @@ int main(int argc, char **argv) {
       continue;  // Keep running
     }
 
-    // Process the request using cached text features
-    clip_resp = process_clip_request_with_cache(clip_req, &opt, &rknn_app_ctx,
-                                                &text_cache, input_texts);
+    // Process the request using the common function
+    clip_resp = process_clip_request(clip_req, &opt, &rknn_app_ctx, input_texts,
+                                     text_lines);
     if (clip_resp != NULL) {
       // Send response using the common function
       send_response(uds_client_sockfd, msg, clip_resp);
@@ -865,13 +697,6 @@ out:
 
   if (uds_client_sockfd >= 0) {
     close(uds_client_sockfd);
-  }
-
-  // 释放文本特征缓存
-  if (text_cache.features != NULL) {
-    free_clip_features(text_cache.features);
-    text_cache.features = NULL;
-    text_cache.initialized = false;
   }
 
   // Free any remaining resources

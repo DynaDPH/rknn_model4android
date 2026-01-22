@@ -35,6 +35,7 @@ target_link_libraries(${PROJECT_NAME}
 	imageutils
     fileutils
     busuds
+    dma_alloc
     ${LIBRKNNRT}
     dl
 )
@@ -56,6 +57,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${LIBRKNNRT_INCLUDES}
     ${LIBJSONCFILE_INCLUDES}
+    ${DMA_ALLOC_INCLUDES}
 )
 
 install(TARGETS ${PROJECT_NAME} DESTINATION .)

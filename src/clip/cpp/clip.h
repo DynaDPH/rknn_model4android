@@ -21,7 +21,8 @@
 #include "clip_tokenizer.h"
 #include "rknn_clip_utils.h"
 
-#define MAX_TEXT_NUM 16
+// 保留原有限制用于向后兼容，但实际上新API无此限制
+#define MAX_TEXT_NUM 1024
 
 typedef struct {
     rknn_clip_context img;
@@ -40,11 +41,48 @@ int init_clip_model(const char* img_model_path,
 
 int release_clip_model(rknn_app_context_t* app_ctx);
 
+// 原有API - 保留向后兼容
 int inference_clip_model(rknn_app_context_t* app_ctx,
                         image_buffer_t* img,
                         char** input_texts,
                         int text_num,
                         clip_res* out_res
                         );
+
+// ============ 新增解耦API ============
+
+/**
+ * @brief 单独推理文本标签，返回堆分配的特征向量
+ * @param app_ctx 应用上下文
+ * @param input_texts 输入文本数组
+ * @param text_num 文本数量（无上限限制）
+ * @param text_output_ptr [输出] 堆分配的文本特征数组，调用者需使用 free_clip_features 释放
+ * @param feature_dim [输出] 每个文本的特征维度
+ * @return 0 成功，-1 失败
+ */
+int inference_clip_text_only(rknn_app_context_t* app_ctx,
+                              char** input_texts,
+                              int text_num,
+                              float** text_output_ptr,
+                              int* feature_dim);
+
+/**
+ * @brief 单独推理图片，返回堆分配的特征向量
+ * @param app_ctx 应用上下文
+ * @param img 输入图片
+ * @param img_output_ptr [输出] 堆分配的图片特征数组，调用者需使用 free_clip_features 释放
+ * @param feature_dim [输出] 图片的特征维度
+ * @return 0 成功，-1 失败
+ */
+int inference_clip_image_only(rknn_app_context_t* app_ctx,
+                               image_buffer_t* img,
+                               float** img_output_ptr,
+                               int* feature_dim);
+
+/**
+ * @brief 释放特征向量内存
+ * @param features 由 inference_clip_text_only 或 inference_clip_image_only 返回的特征指针
+ */
+void free_clip_features(float* features);
 
 #endif //_RKNN_DEMO_CLIP_H_

@@ -40,6 +40,7 @@ int uds_register_handler(uint8_t call_type, call callback) {
 
   call_type_to_fd[call_type].call_func = callback;
   call_type_to_fd[call_type].call_type = call_type;
+  call_type_to_fd[call_type].fd = -1;  // Initialize fd as not registered
   LOG("Registered call_type %d mapping", call_type_to_fd[call_type].call_type);
   return 0;
 }
@@ -69,6 +70,14 @@ static int find_fd_call_type(int fd) {
     }
   }
   return -1;
+}
+
+// Find the registered fd for a given call_type
+static int find_fd_by_call_type(uint8_t call_type) {
+  if (call_type >= UDS_CALL_TYPE_MAX) {
+    return -1;
+  }
+  return call_type_to_fd[call_type].fd;
 }
 static call find_call_func_by_call_type(uint8_t call_type) {
   if (call_type >= UDS_CALL_TYPE_MAX || call_type < 0) {
@@ -203,7 +212,7 @@ static int dispatch_message_to_external(int fd, struct bus_message_s *msg) {
 static int dispatch_message_to_internal(int fd, struct bus_message_s *msg) {
   int ret = -1;
   call fun = find_call_func_by_call_type(msg->header.external.call_type);
-  int dst_fd = find_fd_call_type(msg->header.external.call_type);
+  int dst_fd = find_fd_by_call_type(msg->header.external.call_type);
   int src_fd = fd;
   struct bus_message_s *req = NULL;
 
@@ -731,7 +740,7 @@ struct bus_message_s *recv_bus_message(int fd, int timeout) {
   struct pollfd pfd = {.fd = fd, .events = POLLIN};
 
   if (poll(&pfd, 1, timeout) <= 0) {
-    LOG("socket %d is not ready or timeout");
+    LOG("socket %d is not ready or timeout", fd);
     goto end;
   }
 

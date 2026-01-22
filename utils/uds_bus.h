@@ -12,10 +12,10 @@ extern "C" {
 
 #define LISTEN_BACKLOG 256
 #define MAX_EVENTS 1024
-#define MAX_IMAGE_COUNT 20
+#define MAX_IMAGE_COUNT 128
 #define PATH_LEN 256
 
-#define UDS_PATH "/tmp/sjtuai.sock"
+#define UDS_PATH "/data/local/tmp/sjtuai.sock"
 #define TCP_PORT 8080
 
 #define LOG(fmt, ...) \

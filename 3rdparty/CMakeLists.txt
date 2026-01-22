@@ -81,3 +81,13 @@ set(LIBJSONCFILE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/json-c)
 set(LIBJSONCFILE_INCLUDES ${LIBJSONCFILE_PATH}/include PARENT_SCOPE)
 set(LIBJSONC ${LIBJSONCFILE_PATH}/${CMAKE_SYSTEM_NAME}/${TARGET_LIB_ARCH}/libjson-c.so PARENT_SCOPE)
 install(PROGRAMS ${LIBJSONCFILE_PATH}/${CMAKE_SYSTEM_NAME}/${TARGET_LIB_ARCH}/libjson-c.so DESTINATION lib)
+
+# DMA allocator for zero-copy buffer allocation
+set(DMA_ALLOC_PATH ${CMAKE_CURRENT_SOURCE_DIR}/allocator/dma)
+set(DMA_ALLOC_INCLUDES ${DMA_ALLOC_PATH} PARENT_SCOPE)
+add_library(dma_alloc STATIC ${DMA_ALLOC_PATH}/dma_alloc.cpp)
+target_include_directories(dma_alloc PUBLIC 
+    ${DMA_ALLOC_PATH}
+    ${RGA_PATH}/include
+)
+target_link_libraries(dma_alloc ${RGA_PATH}/${CMAKE_SYSTEM_NAME}/${TARGET_LIB_ARCH}/librga.a)

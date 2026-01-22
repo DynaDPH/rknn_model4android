@@ -208,7 +208,22 @@ int main(int argc, char **argv) {
     }
   }
 
-  recv_bus_message(sockfd, 3000);
+
+  // 接收并打印服务端响应
+  struct bus_message_s *resp = recv_bus_message(sockfd, 30000);  // 30 seconds timeout
+  if (resp != NULL) {
+    if (resp->msg_data != NULL && resp->data_size > 0) {
+      printf("=== CLIP Inference Result ===\n");
+      printf("%s\n", (char *)resp->msg_data);
+      printf("=============================\n");
+    } else {
+      printf("Received empty response from server\n");
+    }
+    bus_message_free(resp);
+  } else {
+    printf("Failed to receive response (timeout or error)\n");
+  }
+
 
 end:
   if (sockfd != -1) {

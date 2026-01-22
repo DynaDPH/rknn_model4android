@@ -80,11 +80,14 @@ static void option_get(int argc, char **argv, struct option_s *g_option) {
   }
 }
 static int split_cmd_args(const char *cmd_str, char **args, int max_args) {
-  char *buf = NULL;
   int arg_count = 0;
-  char *token = NULL;
   int ret = -1;
-  char *save_ptr = NULL;
+  const char *p = NULL;
+  const char *start = NULL;
+  char quote_char = 0;
+  int in_quote = 0;
+  char *arg_buf = NULL;
+  int arg_len = 0;
 
   if (cmd_str == NULL || args == NULL || max_args < 2) {
     LOG("Invalid parameters for split_cmd_args");
@@ -96,18 +99,63 @@ static int split_cmd_args(const char *cmd_str, char **args, int max_args) {
     goto end;
   }
 
-  buf = strdup(cmd_str);
-  if (buf == NULL) {
-    LOG("strdup failed for command: %s", cmd_str);
-    goto end;
-  }
-
-  token = strtok_r(buf, " ", &save_ptr);
-  while (token != NULL && arg_count < max_args - 1) {
-    if (strlen(token) > 0) {
-      args[arg_count++] = strdup(token);
+  p = cmd_str;
+  while (*p != '\0' && arg_count < max_args - 1) {
+    // Skip leading whitespace
+    while (*p == ' ' || *p == '\t') {
+      p++;
     }
-    token = strtok_r(NULL, " ", &save_ptr);
+    if (*p == '\0') break;
+
+    start = p;
+    in_quote = 0;
+    quote_char = 0;
+
+    // Check if argument starts with a quote
+    if (*p == '\'' || *p == '"') {
+      quote_char = *p;
+      in_quote = 1;
+      p++;
+      start = p;  // Start after the opening quote
+
+      // Find closing quote
+      while (*p != '\0' && *p != quote_char) {
+        p++;
+      }
+      arg_len = p - start;
+      if (*p == quote_char) {
+        p++;  // Skip closing quote
+      }
+    } else {
+      // Find end of unquoted argument (handle embedded quotes)
+      while (*p != '\0') {
+        if (*p == '\'' || *p == '"') {
+          // Embedded quote - scan to matching quote
+          char q = *p;
+          p++;
+          while (*p != '\0' && *p != q) {
+            p++;
+          }
+          if (*p == q) p++;
+        } else if (*p == ' ' || *p == '\t') {
+          break;
+        } else {
+          p++;
+        }
+      }
+      arg_len = p - start;
+    }
+
+    if (arg_len > 0) {
+      arg_buf = (char *)malloc(arg_len + 1);
+      if (arg_buf == NULL) {
+        LOG("Failed to allocate memory for argument");
+        goto end;
+      }
+      memcpy(arg_buf, start, arg_len);
+      arg_buf[arg_len] = '\0';
+      args[arg_count++] = arg_buf;
+    }
   }
   args[arg_count] = NULL;
 
@@ -119,9 +167,6 @@ static int split_cmd_args(const char *cmd_str, char **args, int max_args) {
   ret = arg_count;
 
 end:
-  if (buf != NULL) {
-    free(buf);
-  }
   return ret;
 }
 
@@ -235,8 +280,8 @@ end:
  */
 
 #define CLIP_PROCESS "rknn_clip_demo"
-#define CLIP_IMAGE_MODEL_PATH "clip_model.rknn"
-#define CLIP_TEXT_MODEL_PATH "clip_model_txt.rknn"
+#define CLIP_IMAGE_MODEL_PATH "model/clip_images.rknn"
+#define CLIP_TEXT_MODEL_PATH "model/clip_text.rknn"
 #define CLIP_LABELS_PATH "text.txt"
 void *clip_call(int src_fd, uint32_t data_size, uint8_t *msg_data) {
   char *cmd = NULL;

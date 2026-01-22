@@ -21,7 +21,6 @@
 #include "common.h"
 #include "file_utils.h"
 #include "image_utils.h"
-#include "dma_alloc.h"
 
 
 static void dump_tensor_attr(rknn_tensor_attr* attr)
@@ -151,137 +150,10 @@ int release_clip_model_utils(rknn_clip_context* clip_ctx)
     return 0;
 }
 
-// RGA alignment requirement: width must be 16-byte aligned for most RK platforms
-#define RGA_ALIGN_16(x) (((x) + 15) / 16 * 16)
-#define RGA_ALIGN_2(x)  (((x) + 1) / 2 * 2)
-
-/**
- * Release DMA buffer allocated by create_rga_aligned_image_dma
- * 
- * @param img Image buffer with DMA-allocated memory
- */
-static void release_dma_aligned_image(image_buffer_t* img)
-{
-    if (img == NULL) return;
-    
-    if (img->fd > 0 && img->virt_addr != NULL) {
-        // Release DMA buffer
-        dma_buf_free(img->size, &img->fd, img->virt_addr);
-        img->virt_addr = NULL;
-        img->fd = -1;
-    } else if (img->virt_addr != NULL) {
-        // Fallback: regular malloc buffer
-        free(img->virt_addr);
-        img->virt_addr = NULL;
-    }
-}
-
-/**
- * Create an aligned copy of source image for RGA compatibility using DMA buffer.
- * This function pads the image to ensure width is 16-byte aligned.
- * Uses DMA buffer for zero-copy RGA operations.
- * 
- * @param src_img Source image buffer
- * @param aligned_img Output aligned image buffer (caller must call release_dma_aligned_image)
- * @return 0 on success, -1 on failure
- */
-static int create_rga_aligned_image(image_buffer_t* src_img, image_buffer_t* aligned_img)
-{
-    if (src_img == NULL || aligned_img == NULL || src_img->virt_addr == NULL) {
-        return -1;
-    }
-
-    int src_w = src_img->width;
-    int src_h = src_img->height;
-    int aligned_w = RGA_ALIGN_16(src_w);
-    int aligned_h = RGA_ALIGN_2(src_h);
-
-    // Initialize aligned image
-    memset(aligned_img, 0, sizeof(image_buffer_t));
-    aligned_img->width = aligned_w;
-    aligned_img->height = aligned_h;
-    aligned_img->format = src_img->format;
-    aligned_img->size = get_image_size(aligned_img);
-    aligned_img->fd = -1;  // Initialize fd
-
-    // Try to allocate DMA buffer for zero-copy RGA operations
-    int dma_fd = -1;
-    void* dma_va = NULL;
-    int ret = dma_buf_alloc(DMA_HEAP_UNCACHE_PATH, aligned_img->size, &dma_fd, &dma_va);
-    
-    if (ret == 0 && dma_fd > 0 && dma_va != NULL) {
-        // DMA buffer allocation successful - zero-copy path
-        aligned_img->virt_addr = (unsigned char*)dma_va;
-        aligned_img->fd = dma_fd;
-        printf("create_rga_aligned_image: using DMA buffer (fd=%d, size=%d)\n", 
-               dma_fd, aligned_img->size);
-    } else {
-        // Fallback to regular malloc if DMA allocation fails
-        printf("create_rga_aligned_image: DMA alloc failed (ret=%d), falling back to malloc\n", ret);
-        aligned_img->virt_addr = (unsigned char *)malloc(aligned_img->size);
-        aligned_img->fd = -1;
-        
-        if (aligned_img->virt_addr == NULL) {
-            printf("create_rga_aligned_image: malloc %d bytes failed!\n", aligned_img->size);
-            return -1;
-        }
-    }
-
-    // Fill with padding color (black)
-    memset(aligned_img->virt_addr, 0, aligned_img->size);
-
-    // Get bytes per pixel based on format
-    int bytes_per_pixel = 3; // Default RGB888
-    if (src_img->format == IMAGE_FORMAT_RGBA8888) {
-        bytes_per_pixel = 4;
-    } else if (src_img->format == IMAGE_FORMAT_GRAY8) {
-        bytes_per_pixel = 1;
-    }
-
-    // Copy source image data row by row (handles different strides)
-    unsigned char* src_ptr = src_img->virt_addr;
-    unsigned char* dst_ptr = aligned_img->virt_addr;
-    int src_stride = src_w * bytes_per_pixel;
-    int dst_stride = aligned_w * bytes_per_pixel;
-
-    for (int y = 0; y < src_h; y++) {
-        memcpy(dst_ptr + y * dst_stride, src_ptr + y * src_stride, src_stride);
-    }
-
-    // Sync CPU write to device if using DMA buffer
-    if (aligned_img->fd > 0) {
-        dma_sync_cpu_to_device(aligned_img->fd);
-    }
-
-    printf("RGA align (zero-copy=%s): %dx%d -> %dx%d (format=%d)\n", 
-           aligned_img->fd > 0 ? "yes" : "no",
-           src_w, src_h, aligned_w, aligned_h, src_img->format);
-
-    return 0;
-}
-
-
-/**
- * Check if the image dimensions are RGA-compatible (16-byte aligned width)
- */
-static int is_rga_compatible(image_buffer_t* img)
-{
-    if (img == NULL) return 0;
-    // Most RK platforms require 16-byte alignment, RV1106/1103 requires 4-byte
-#if defined(RV1106_1103)
-    return (img->width % 4 == 0);
-#else
-    return (img->width % 16 == 0);
-#endif
-}
-
 int inference_clip_image_model_utils(rknn_clip_context* clip_ctx, image_buffer_t* img, float img_output[])
 {
     int ret;
     image_buffer_t dst_img;
-    image_buffer_t aligned_img;
-    image_buffer_t* work_img = img;  // Pointer to the image we'll actually use
-    int use_aligned = 0;
     rknn_input inputs[1];
     rknn_output outputs[1];
 
@@ -292,72 +164,35 @@ int inference_clip_image_model_utils(rknn_clip_context* clip_ctx, image_buffer_t
     }
 
     memset(&dst_img, 0, sizeof(image_buffer_t));
-    memset(&aligned_img, 0, sizeof(image_buffer_t));
     memset(inputs, 0, sizeof(inputs));
     memset(outputs, 0, sizeof(outputs));
 
-    // Check if we need to create an aligned copy for RGA compatibility
-    if (!is_rga_compatible(img)) {
-        printf("Source image (%dx%d) not RGA-compatible, creating aligned copy...\n", 
-               img->width, img->height);
-        ret = create_rga_aligned_image(img, &aligned_img);
-        if (ret == 0) {
-            work_img = &aligned_img;
-            use_aligned = 1;
-        } else {
-            printf("Warning: Failed to create aligned image, falling back to original\n");
-            work_img = img;
-        }
-    }
-
-    // Pre Process - Allocate destination buffer using DMA for zero-copy
+    // Pre Process
     dst_img.width = clip_ctx->model_width;
     dst_img.height = clip_ctx->model_height;
     dst_img.format = IMAGE_FORMAT_RGB888;
     dst_img.size = get_image_size(&dst_img);
-    dst_img.fd = -1;
-    
-    // Try DMA buffer allocation for dst_img
-    int dst_dma_fd = -1;
-    void* dst_dma_va = NULL;
-    int dma_ret = dma_buf_alloc(DMA_HEAP_UNCACHE_PATH, dst_img.size, &dst_dma_fd, &dst_dma_va);
-    
-    if (dma_ret == 0 && dst_dma_fd > 0 && dst_dma_va != NULL) {
-        dst_img.virt_addr = (unsigned char*)dst_dma_va;
-        dst_img.fd = dst_dma_fd;
-        printf("inference_clip_image: dst_img using DMA buffer (fd=%d, size=%d)\n", 
-               dst_dma_fd, dst_img.size);
-    } else {
-        // Fallback to malloc
-        printf("inference_clip_image: DMA alloc for dst_img failed, using malloc\n");
-        dst_img.virt_addr = (unsigned char *)malloc(dst_img.size);
-        dst_img.fd = -1;
-    }
-    
+    dst_img.virt_addr = (unsigned char *)malloc(dst_img.size);
     if (dst_img.virt_addr == NULL)
     {
-        printf("allocate buffer size:%d fail!\n", dst_img.size);
-        ret = -1;
-        goto cleanup_aligned;
+        printf("malloc buffer size:%d fail!\n", dst_img.size);
+        return -1;
     }
 
-    // Center crop - use original image dimensions for crop calculation
-    // but perform operation on work_img (which may be aligned)
+    // center crop
     if (img->width < CROP_SIZE || img->height < CROP_SIZE)
     {
-        // Image is smaller than crop size, no cropping needed
-        ret = convert_image(work_img, &dst_img, NULL, NULL, 0);
+        ret = convert_image(img, &dst_img, NULL, NULL, 0);
     }
     else
     {
         image_rect_t src_box;
         memset(&src_box, 0, sizeof(image_rect_t));
-        // Calculate crop box based on original image size
         src_box.left = (img->width - CROP_SIZE) / 2;
         src_box.top = (img->height - CROP_SIZE) / 2;
         src_box.right = src_box.left + CROP_SIZE - 1;
         src_box.bottom = src_box.top + CROP_SIZE - 1;
-        ret = convert_image(work_img, &dst_img, &src_box, NULL, 0);
+        ret = convert_image(img, &dst_img, &src_box, NULL, 0);
     }
     if (ret < 0)
     {
@@ -403,14 +238,9 @@ int inference_clip_image_model_utils(rknn_clip_context* clip_ctx, image_buffer_t
     rknn_outputs_release(clip_ctx->rknn_ctx, 1, outputs);
 
 out:
-    // Free dst_img buffer (supports both DMA and malloc)
-    release_dma_aligned_image(&dst_img);
-
-cleanup_aligned:
-    // Free aligned image buffer if it was allocated (supports both DMA and malloc)
-    if (use_aligned)
+    if (dst_img.virt_addr != NULL)
     {
-        release_dma_aligned_image(&aligned_img);
+        free(dst_img.virt_addr);
     }
 
     return ret;
