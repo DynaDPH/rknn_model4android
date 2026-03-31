@@ -30,9 +30,13 @@
 #define PATH_LEN 256
 
 struct option_s {
-  char image_model_path[PATH_LEN + 1];
-  char text_model_path[PATH_LEN + 1];
-  char text_path[PATH_LEN + 1];
+  char clip_image_model_path[PATH_LEN + 1];
+  char clip_txt_model_path[PATH_LEN + 1];
+  char clip_labels_path[PATH_LEN + 1];
+
+  char yolo8_model_path[PATH_LEN + 1];
+  char yolo8_labels_path[PATH_LEN + 1];
+
   char uds_path[PATH_LEN + 1];
 
   uint8_t *data;
@@ -50,11 +54,6 @@ struct images {
   float score;
 };
 
-// struct clip_resp_s {
-//   int image_count;
-//   struct images *images[MAX_IMAGE_COUNT];
-// };
-
 struct scene_labels_s {
   int classId;
   char label_en[PATH_LEN];
@@ -67,17 +66,17 @@ struct object_labels_s {
   char label_en[PATH_LEN];
   char label_cn[PATH_LEN];
   int count;
-  float *confidenceList; // 动态数组，长度为count
+  float *confidenceList;  // 动态数组，长度为count
 };
 
 struct faces_s {
-  float *embedding; // 动态数组，长度为embedding_size
+  float *embedding;  // 动态数组，长度为embedding_size
   int embedding_size;
   char dominantEmotion_en[PATH_LEN];
   char dominantEmotion_cn[PATH_LEN];
 };
 
-struct  clip_resp_s {
+struct clip_resp_s {
   char image[PATH_LEN];
 
   struct scene_labels_s *sceneLabels;
@@ -90,7 +89,18 @@ struct  clip_resp_s {
   int faceCount;
 };
 
-void free_clip_req(struct clip_req_s *msg) {
+static struct clip_req_s *alloc_clip_req() {
+  struct clip_req_s *msg =
+      (struct clip_req_s *)malloc(sizeof(struct clip_req_s));
+  if (msg == NULL) {
+    LOG("Failed to allocate memory for clip_req");
+    return NULL;
+  }
+  memset(msg, 0, sizeof(struct clip_req_s));
+  return msg;
+}
+
+static void free_clip_req(struct clip_req_s *msg) {
   if (msg == NULL) return;
 
   for (int i = 0; i < msg->image_count; i++) {
@@ -102,7 +112,7 @@ void free_clip_req(struct clip_req_s *msg) {
   free(msg);
 }
 
-void dump_clip_req(struct clip_req_s *msg) {
+static void dump_clip_req(struct clip_req_s *msg) {
   if (msg == NULL) {
     printf("clip_req is NULL\n");
     return;
@@ -116,51 +126,106 @@ void dump_clip_req(struct clip_req_s *msg) {
   }
 }
 
-void add_clip_resp(struct clip_resp_s *resp, const char *image_path,
-                   const char *text, float score) {
-  if (resp == NULL || image_path == NULL || text == NULL) {
-    LOG("Invalid parameters for add_clip_resp");
-    return;
+static struct clip_resp_s *alloc_clip_resp() {
+  struct clip_resp_s *resp =
+      (struct clip_resp_s *)malloc(sizeof(struct clip_resp_s));
+  if (resp == NULL) {
+    LOG("Failed to allocate memory for clip_resp");
+    return NULL;
   }
-
-  if (resp->image_count >= MAX_IMAGE_COUNT) {
-    LOG("clip_resp: image_count >= MAX_IMAGE_COUNT");
-    return;
-  }
-
-  struct images *img = (struct images *)malloc(sizeof(struct images));
-  if (img == NULL) {
-    LOG("Failed to allocate memory for images");
-    return;
-  }
-
-  strncpy(img->image, image_path, PATH_LEN - 1);
-  img->image[PATH_LEN - 1] = '\0';
-  strncpy(img->text, text, PATH_LEN - 1);
-  img->text[PATH_LEN - 1] = '\0';
-  img->score = score;
-
-  resp->images[resp->image_count++] = img;
+  memset(resp, 0, sizeof(struct clip_resp_s));
+  return resp;
 }
-
-void free_clip_resp(struct clip_resp_s *resp) {
+static void free_clip_resp(struct clip_resp_s *resp) {
   if (resp == NULL) return;
 
-  for (int i = 0; i < resp->image_count; i++) {
-    if (resp->images[i] != NULL) {
-      free(resp->images[i]);
-      resp->images[i] = NULL;
+  // Free scene labels
+  if (resp->sceneLabels != NULL) {
+    free(resp->sceneLabels);
+    resp->sceneLabels = NULL;
+    resp->sceneLabelCount = 0;
+  }
+
+  // Free object labels and their confidence lists
+  if (resp->objectLabels != NULL) {
+    for (int i = 0; i < resp->objectLabelCount; i++) {
+      if (resp->objectLabels[i].confidenceList != NULL) {
+        free(resp->objectLabels[i].confidenceList);
+        resp->objectLabels[i].confidenceList = NULL;
+      }
+    }
+    free(resp->objectLabels);
+    resp->objectLabels = NULL;
+    resp->objectLabelCount = 0;
+  }
+
+  // Free faces and their embeddings
+  if (resp->faces != NULL) {
+    for (int i = 0; i < resp->faceCount; i++) {
+      if (resp->faces[i].embedding != NULL) {
+        free(resp->faces[i].embedding);
+        resp->faces[i].embedding = NULL;
+      }
+    }
+    free(resp->faces);
+    resp->faces = NULL;
+    resp->faceCount = 0;
+  }
+
+  // Free the response structure itself
+  free(resp);
+}
+static void dump_clip_resp(struct clip_resp_s *resp) {
+  if (resp == NULL) {
+    printf("clip_resp is NULL\n");
+    return;
+  }
+
+  printf("image: %s\n", resp->image);
+
+  printf("sceneLabels count: %d\n", resp->sceneLabelCount);
+  for (int i = 0; i < resp->sceneLabelCount; i++) {
+    printf("  [%d] classId: %d, label_en: %s, label_cn: %s, probability: %f\n",
+           i, resp->sceneLabels[i].classId, resp->sceneLabels[i].label_en,
+           resp->sceneLabels[i].label_cn, resp->sceneLabels[i].probability);
+  }
+
+  printf("objectLabels count: %d\n", resp->objectLabelCount);
+  for (int i = 0; i < resp->objectLabelCount; i++) {
+    printf("  [%d] classId: %d, label_en: %s, label_cn: %s, count: %d\n", i,
+           resp->objectLabels[i].classId, resp->objectLabels[i].label_en,
+           resp->objectLabels[i].label_cn, resp->objectLabels[i].count);
+    if (resp->objectLabels[i].confidenceList != NULL) {
+      for (int j = 0; j < resp->objectLabels[i].count; j++) {
+        printf("    confidence[%d]: %f\n", j,
+               resp->objectLabels[i].confidenceList[j]);
+      }
     }
   }
-  free(resp);
+
+  printf("faces count: %d\n", resp->faceCount);
+  for (int i = 0; i < resp->faceCount; i++) {
+    printf(
+        "  [%d] embedding_size: %d, dominantEmotion_en: %s, "
+        "dominantEmotion_cn: %s\n",
+        i, resp->faces[i].embedding_size, resp->faces[i].dominantEmotion_en,
+        resp->faces[i].dominantEmotion_cn);
+    if (resp->faces[i].embedding != NULL) {
+      for (int j = 0; j < resp->faces[i].embedding_size; j++) {
+        printf("    embedding[%d]: %f\n", j, resp->faces[i].embedding[j]);
+      }
+    }
+  }
 }
 
 static void help_guide(char *prog_name) {
   printf("Usage: %s [OPTIONS] [ARGS]\n", prog_name);
   printf("Options:\n");
-  printf("--image-model-path,-i load image model path\n");
-  printf("--text-model-path,-t load text model path\n");
-  printf("--labels,-l load text path\n");
+  printf("--clip-image-model-path,-i load clip image model path\n");
+  printf("--clip-text-model-path,-t load clip text model path\n");
+  printf("--clip-labels-path,-l load clip labels path\n");
+  printf("--yolo8-model-path,-y load yolo8 model path\n");
+  printf("--yolo8-labels-path,-Y load yolo8 labels path\n");
   printf("--unix-domain-socket,-u connect UDS\n");
   printf("--data load data\n");
   printf("--data-size load data size\n");
@@ -175,36 +240,55 @@ static int parser_option(struct option_s *uopt, int argc, char **argv) {
 
   int opt = 0;
   struct option longopt[] = {
-      {"image-model-path", required_argument, NULL, 'i'},
-      {"text-model-path", required_argument, NULL, 't'},
-      {"help", no_argument, NULL, 'h'},
-      {"labels", required_argument, NULL, 'l'},
+      {"clip-image-model-path", required_argument, NULL, 'i'},
+      {"clip-text-model-path", required_argument, NULL, 't'},
+      {"clip-labels-path", required_argument, NULL, 'l'},
+      {"yolo8-model-path", required_argument, NULL, 'y'},
+      {"yolo8-labels-path", required_argument, NULL, 'Y'},
       {"unix-domain-socket", required_argument, NULL, 'u'},
       {"data", required_argument, NULL, 'd'},
       {"data-size", required_argument, NULL, 's'},
+      {"help", no_argument, NULL, 'h'},
       {NULL, 0, NULL, 0}};
 
-  while ((opt = getopt_long(argc, argv, "i:t:hl:u:d:s:", longopt, NULL)) !=
+  while ((opt = getopt_long(argc, argv, "i:t:l:y:Y:u:d:s:h", longopt, NULL)) !=
          -1) {
     switch (opt) {
       case 'i': {
         if (optarg) {
-          strncpy(uopt->image_model_path, optarg,
-                  sizeof(uopt->image_model_path) - 1);
-          uopt->image_model_path[sizeof(uopt->image_model_path) - 1] = '\0';
+          strncpy(uopt->clip_image_model_path, optarg,
+                  sizeof(uopt->clip_image_model_path) - 1);
+          uopt->clip_image_model_path[sizeof(uopt->clip_image_model_path) - 1] =
+              '\0';
         }
       } break;
       case 't': {
         if (optarg) {
-          strncpy(uopt->text_model_path, optarg,
-                  sizeof(uopt->text_model_path) - 1);
-          uopt->text_model_path[sizeof(uopt->text_model_path) - 1] = '\0';
+          strncpy(uopt->clip_txt_model_path, optarg,
+                  sizeof(uopt->clip_txt_model_path) - 1);
+          uopt->clip_txt_model_path[sizeof(uopt->clip_txt_model_path) - 1] =
+              '\0';
         }
       } break;
       case 'l': {
         if (optarg) {
-          strncpy(uopt->text_path, optarg, sizeof(uopt->text_path) - 1);
-          uopt->text_path[sizeof(uopt->text_path) - 1] = '\0';
+          strncpy(uopt->clip_labels_path, optarg,
+                  sizeof(uopt->clip_labels_path) - 1);
+          uopt->clip_labels_path[sizeof(uopt->clip_labels_path) - 1] = '\0';
+        }
+      } break;
+      case 'y': {
+        if (optarg) {
+          strncpy(uopt->yolo8_model_path, optarg,
+                  sizeof(uopt->yolo8_model_path) - 1);
+          uopt->yolo8_model_path[sizeof(uopt->yolo8_model_path) - 1] = '\0';
+        }
+      } break;
+      case 'Y': {
+        if (optarg) {
+          strncpy(uopt->yolo8_labels_path, optarg,
+                  sizeof(uopt->yolo8_labels_path) - 1);
+          uopt->yolo8_labels_path[sizeof(uopt->yolo8_labels_path) - 1] = '\0';
         }
       } break;
       case 'u': {
@@ -317,12 +401,16 @@ static uint8_t *format_clip_resp(struct clip_resp_s *clip_message_resp,
   uint8_t *result = NULL;
   json_object *json_array = NULL;
   json_object *json_item = NULL;
-  json_object *json_image = NULL;
-  json_object *json_text = NULL;
-  json_object *json_score = NULL;
+  json_object *json_scene_labels = NULL;
+  json_object *json_object_labels = NULL;
+  json_object *json_faces = NULL;
+  json_object *json_label_obj = NULL;
+  json_object *json_embedding_array = NULL;
+  json_object *json_confidence_array = NULL;
+  json_object *json_emotion_obj = NULL;
   const char *json_str = NULL;
   size_t str_len = 0;
-  int i = 0;
+  int i = 0, j = 0;
 
   if (clip_message_resp == NULL || size == NULL) {
     LOG("Invalid parameters for format_clip_resp");
@@ -335,27 +423,104 @@ static uint8_t *format_clip_resp(struct clip_resp_s *clip_message_resp,
     goto error;
   }
 
-  for (i = 0; i < clip_message_resp->image_count; i++) {
-    if (clip_message_resp->images[i] == NULL) continue;
-
-    json_item = json_object_new_object();
-    if (json_item == NULL) {
-      LOG("Failed to create JSON item for index %d", i);
-      goto error;
-    }
-
-    json_image = json_object_new_string(clip_message_resp->images[i]->image);
-    json_object_object_add(json_item, "image", json_image);
-
-    json_text = json_object_new_string(clip_message_resp->images[i]->text);
-    json_object_object_add(json_item, "text", json_text);
-
-    json_score = json_object_new_double(clip_message_resp->images[i]->score);
-    json_object_object_add(json_item, "score", json_score);
-
-    json_object_array_add(json_array, json_item);
-    json_item = NULL;  // Ownership transferred to array
+  json_item = json_object_new_object();
+  if (json_item == NULL) {
+    LOG("Failed to create JSON item");
+    goto error;
   }
+
+  // Add image path
+  json_object_object_add(json_item, "image",
+                         json_object_new_string(clip_message_resp->image));
+
+  // Add scene labels
+  json_scene_labels = json_object_new_array();
+  for (i = 0; i < clip_message_resp->sceneLabelCount; i++) {
+    json_object *scene_obj = json_object_new_object();
+    json_object_object_add(
+        scene_obj, "classId",
+        json_object_new_int(clip_message_resp->sceneLabels[i].classId));
+
+    json_label_obj = json_object_new_object();
+    json_object_object_add(
+        json_label_obj, "en",
+        json_object_new_string(clip_message_resp->sceneLabels[i].label_en));
+    json_object_object_add(
+        json_label_obj, "cn",
+        json_object_new_string(clip_message_resp->sceneLabels[i].label_cn));
+    json_object_object_add(scene_obj, "label", json_label_obj);
+
+    json_object_object_add(
+        scene_obj, "probability",
+        json_object_new_double(clip_message_resp->sceneLabels[i].probability));
+    json_object_array_add(json_scene_labels, scene_obj);
+  }
+  json_object_object_add(json_item, "sceneLabels", json_scene_labels);
+
+  // Add object labels
+  json_object_labels = json_object_new_array();
+  for (i = 0; i < clip_message_resp->objectLabelCount; i++) {
+    json_object *obj = json_object_new_object();
+    json_object_object_add(
+        obj, "classId",
+        json_object_new_int(clip_message_resp->objectLabels[i].classId));
+
+    json_label_obj = json_object_new_object();
+    json_object_object_add(
+        json_label_obj, "en",
+        json_object_new_string(clip_message_resp->objectLabels[i].label_en));
+    json_object_object_add(
+        json_label_obj, "cn",
+        json_object_new_string(clip_message_resp->objectLabels[i].label_cn));
+    json_object_object_add(obj, "label", json_label_obj);
+
+    json_object_object_add(
+        obj, "count",
+        json_object_new_int(clip_message_resp->objectLabels[i].count));
+
+    json_confidence_array = json_object_new_array();
+    if (clip_message_resp->objectLabels[i].confidenceList != NULL) {
+      for (j = 0; j < clip_message_resp->objectLabels[i].count; j++) {
+        json_object_array_add(
+            json_confidence_array,
+            json_object_new_double(
+                clip_message_resp->objectLabels[i].confidenceList[j]));
+      }
+    }
+    json_object_object_add(obj, "confidenceList", json_confidence_array);
+    json_object_array_add(json_object_labels, obj);
+  }
+  json_object_object_add(json_item, "objectLabels", json_object_labels);
+
+  // Add faces
+  json_faces = json_object_new_array();
+  for (i = 0; i < clip_message_resp->faceCount; i++) {
+    json_object *face_obj = json_object_new_object();
+
+    json_embedding_array = json_object_new_array();
+    if (clip_message_resp->faces[i].embedding != NULL) {
+      for (j = 0; j < clip_message_resp->faces[i].embedding_size; j++) {
+        json_object_array_add(
+            json_embedding_array,
+            json_object_new_double(clip_message_resp->faces[i].embedding[j]));
+      }
+    }
+    json_object_object_add(face_obj, "embedding", json_embedding_array);
+
+    json_emotion_obj = json_object_new_object();
+    json_object_object_add(
+        json_emotion_obj, "en",
+        json_object_new_string(clip_message_resp->faces[i].dominantEmotion_en));
+    json_object_object_add(
+        json_emotion_obj, "cn",
+        json_object_new_string(clip_message_resp->faces[i].dominantEmotion_cn));
+    json_object_object_add(face_obj, "dominantEmotion", json_emotion_obj);
+
+    json_object_array_add(json_faces, face_obj);
+  }
+  json_object_object_add(json_item, "faces", json_faces);
+
+  json_object_array_add(json_array, json_item);
 
   json_str = json_object_to_json_string(json_array);
   if (json_str == NULL) {
@@ -542,8 +707,8 @@ static int process_and_send_command_line_data(struct option_s *opt,
   }
 
   // Process the request
-  struct clip_resp_s *clip_resp = process_clip_request(
-      clip_req, opt, rknn_app_ctx, input_texts, text_num);
+  struct clip_resp_s *clip_resp =
+      process_clip_request(clip_req, opt, rknn_app_ctx, input_texts, text_num);
   if (clip_resp == NULL) {
     LOG("Failed to process command line request");
     free_clip_req(clip_req);
