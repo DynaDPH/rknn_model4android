@@ -21,6 +21,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "yolov8.h"
 #include "clip.h"
 #include "file_utils.h"
 #include "image_utils.h"
@@ -241,6 +242,10 @@ static int parser_option(struct option_s *uopt, int argc, char **argv) {
   }
 
   int opt = 0;
+  uopt->src_fd = -1;
+  uopt->data = NULL;
+  uopt->data_size = 0;
+
   struct option longopt[] = {
       {"clip-image-model-path", required_argument, NULL, 'i'},
       {"clip-text-model-path", required_argument, NULL, 't'},
@@ -620,13 +625,11 @@ static struct clip_resp_s *process_clip_request(
   }
 
   // Initialize response
-  struct clip_resp_s *clip_resp =
-      (struct clip_resp_s *)malloc(sizeof(struct clip_resp_s));
+  struct clip_resp_s *clip_resp = alloc_clip_resp();
   if (clip_resp == NULL) {
     LOG("Failed to allocate memory for clip_resp");
     return NULL;
   }
-  memset(clip_resp, 0, sizeof(struct clip_resp_s));
 
   // Process each image
   int success_count = 0;
@@ -693,6 +696,13 @@ static int process_and_send_command_line_data(struct option_s *opt,
                                               rknn_app_context_t *rknn_app_ctx,
                                               char **input_texts, int text_num,
                                               int uds_client_sockfd) {
+  struct clip_req_s *clip_req = NULL;
+  struct clip_resp_s *clip_resp = NULL;
+  struct bus_message_s *initial_msg = NULL;
+  uint32_t size = 0;
+  uint8_t *buffer = NULL;
+  int ret = -1;
+
   if (opt == NULL || rknn_app_ctx == NULL || input_texts == NULL ||
       opt->data == NULL) {
     LOG("Invalid parameters for process_and_send_command_line_data");
@@ -700,7 +710,7 @@ static int process_and_send_command_line_data(struct option_s *opt,
   }
 
   LOG("Processing initial data from command line");
-  struct clip_req_s *clip_req = parser_mgs_data(opt->data);
+  clip_req = parser_mgs_data(opt->data);
   if (clip_req == NULL) {
     LOG("Failed to parse command line data");
     return -1;
@@ -708,51 +718,50 @@ static int process_and_send_command_line_data(struct option_s *opt,
 
   dump_clip_req(clip_req);
 
-  // Validate image count
   if (clip_req->image_count <= 0 || clip_req->image_count > MAX_IMAGE_COUNT) {
     LOG("Invalid image count: %d", clip_req->image_count);
-    free_clip_req(clip_req);
-    return -1;
+    goto free_clip;
   }
 
-  // Process the request
-  struct clip_resp_s *clip_resp =
+  clip_resp =
       process_clip_request(clip_req, opt, rknn_app_ctx, input_texts, text_num);
   if (clip_resp == NULL) {
     LOG("Failed to process command line request");
-    free_clip_req(clip_req);
-    return -1;
+    goto free_clip;
   }
 
-  // Cleanup request data
-  free_clip_req(clip_req);
+  dump_clip_resp(clip_resp);
+  buffer = format_clip_resp(clip_resp, &size);
 
-  // 如果提供了 UDS 客户端，发送响应到 UDS 服务器
   if (uds_client_sockfd >= 0) {
-    // 创建一个模拟的内部消息用于发送响应
-    struct bus_message_s *initial_msg = bus_message_new_internal(
-        uds_client_sockfd, opt->src_fd, opt->data, opt->data_size);
+    initial_msg =
+        bus_message_new_internal(uds_client_sockfd, opt->src_fd, buffer, size);
     if (initial_msg == NULL) {
       LOG("Failed to create initial message");
-      free_clip_resp(clip_resp);
-      return -1;
+      goto cleanup;
     }
 
-    int ret = send_response(uds_client_sockfd, initial_msg, clip_resp);
-    bus_message_free(initial_msg);
-    free_clip_resp(clip_resp);
-    return ret;
+    ret = send_response(uds_client_sockfd, initial_msg, clip_resp);
   } else {
-    // 如果没有 UDS 客户端，打印结果
-    uint32_t data_size = 0;
-    uint8_t *buffer = format_clip_resp(clip_resp, &data_size);
-    if (buffer != NULL) {
-      printf("%s\n", (char *)buffer);
-      free(buffer);
-    }
-    free_clip_resp(clip_resp);
-    return 0;
+    printf("%s\n", (char *)buffer);
+    ret = 0;
   }
+
+cleanup:
+  if (initial_msg != NULL) {
+    bus_message_free(initial_msg);
+  }
+  if (clip_resp != NULL) {
+    free_clip_resp(clip_resp);
+  }
+  if (buffer != NULL) {
+    free(buffer);
+  }
+free_clip:
+  if (clip_req != NULL) {
+    free_clip_req(clip_req);
+  }
+  return ret;
 }
 
 /*-------------------------------------------
@@ -786,10 +795,10 @@ int main(int argc, char **argv) {
 
   // Initialize CLIP model
   ret =
-      init_clip_model(opt.image_model_path, opt.text_model_path, &rknn_app_ctx);
+      init_clip_model(opt.clip_image_model_path, opt.clip_txt_model_path, &rknn_app_ctx);
   if (ret != 0) {
     LOG("init_clip_model fail! ret=%d img_model_path=%s text_model_path=%s",
-        ret, opt.image_model_path, opt.text_model_path);
+        ret, opt.clip_image_model_path, opt.clip_txt_model_path);
     goto out;
   }
 
@@ -832,7 +841,7 @@ int main(int argc, char **argv) {
   /**
    * 使用脚本进行配置，常驻后台和临时启动
    */
-  if (opt.data) {
+  if (opt.data && opt.data_size > 0 && opt.src_fd >= 0) {
     ret = process_and_send_command_line_data(&opt, &rknn_app_ctx, input_texts,
                                              text_lines, uds_client_sockfd);
     if (ret != 0) {
