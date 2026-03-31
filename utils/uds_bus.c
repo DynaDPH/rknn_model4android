@@ -63,15 +63,6 @@ static int find_call_type_fd(int fd) {
   return -1;
 }
 
-static int find_fd_call_type(int fd) {
-  for (int i = 0; i < UDS_CALL_TYPE_MAX; i++) {
-    if (call_type_to_fd[i].fd == fd) {
-      return call_type_to_fd[i].call_type;
-    }
-  }
-  return -1;
-}
-
 // Find the registered fd for a given call_type
 static int find_fd_by_call_type(uint8_t call_type) {
   if (call_type >= UDS_CALL_TYPE_MAX) {

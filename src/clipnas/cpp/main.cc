@@ -39,6 +39,7 @@ struct option_s {
 
   char uds_path[PATH_LEN + 1];
 
+  int src_fd;
   uint8_t *data;
   uint32_t data_size;
 };
@@ -229,6 +230,7 @@ static void help_guide(char *prog_name) {
   printf("--unix-domain-socket,-u connect UDS\n");
   printf("--data load data\n");
   printf("--data-size load data size\n");
+  printf("--data-source-fd, -f load data from fd\n");
   printf("--help, -h  help guide\n");
 }
 
@@ -248,10 +250,12 @@ static int parser_option(struct option_s *uopt, int argc, char **argv) {
       {"unix-domain-socket", required_argument, NULL, 'u'},
       {"data", required_argument, NULL, 'd'},
       {"data-size", required_argument, NULL, 's'},
+      {"data-source-fd", required_argument, NULL, 'f'},
+
       {"help", no_argument, NULL, 'h'},
       {NULL, 0, NULL, 0}};
 
-  while ((opt = getopt_long(argc, argv, "i:t:l:y:Y:u:d:s:h", longopt, NULL)) !=
+  while ((opt = getopt_long(argc, argv, "i:t:l:y:Y:u:dsfh", longopt, NULL)) !=
          -1) {
     switch (opt) {
       case 'i': {
@@ -314,6 +318,11 @@ static int parser_option(struct option_s *uopt, int argc, char **argv) {
       case 's': {
         if (optarg) {
           uopt->data_size = atoi(optarg);
+        }
+      } break;
+      case 'f': {
+        if (optarg) {
+          uopt->src_fd = atoi(optarg);
         }
       } break;
       case 'h': {
@@ -722,7 +731,7 @@ static int process_and_send_command_line_data(struct option_s *opt,
   if (uds_client_sockfd >= 0) {
     // 创建一个模拟的内部消息用于发送响应
     struct bus_message_s *initial_msg = bus_message_new_internal(
-        uds_client_sockfd, uds_client_sockfd, opt->data, opt->data_size);
+        uds_client_sockfd, opt->src_fd, opt->data, opt->data_size);
     if (initial_msg == NULL) {
       LOG("Failed to create initial message");
       free_clip_resp(clip_resp);
@@ -767,7 +776,9 @@ int main(int argc, char **argv) {
     goto out;
   }
 
-  if (!strlen(opt.image_model_path) || !strlen(opt.text_model_path)) {
+  if (!strlen(opt.clip_image_model_path) || !strlen(opt.clip_txt_model_path) ||
+      !strlen(opt.yolo8_labels_path) || !strlen(opt.yolo8_model_path) ||
+      !strlen(opt.clip_labels_path) || !strlen(opt.clip_labels_path)) {
     help_guide(argv[0]);
     ret = -1;
     goto out;
@@ -818,6 +829,9 @@ int main(int argc, char **argv) {
     LOG("No UDS path provided, running in standalone mode");
   }
 
+  /**
+   * 使用脚本进行配置，常驻后台和临时启动
+   */
   if (opt.data) {
     ret = process_and_send_command_line_data(&opt, &rknn_app_ctx, input_texts,
                                              text_lines, uds_client_sockfd);

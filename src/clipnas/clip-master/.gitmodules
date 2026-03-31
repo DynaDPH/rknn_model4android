@@ -1,3 +1,0 @@
-[submodule "scripts"]
-	path = scripts
-	url = git@github.com:SJTU-Sichuan-Research-Lab/docker-scripts.git

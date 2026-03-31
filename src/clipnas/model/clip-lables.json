@@ -1,0 +1,414 @@
+{
+  "filters": [
+    {
+      "name": "资料记录类型识别层",
+      "type": "object",
+      "threshold": 0.5,
+      "categories": [
+        {
+          "label": {
+            "classId": 2000001,
+            "labelName": {
+              "cn": "屏幕截图",
+              "en": "Screenshot"
+            }
+          },
+          "clipText": "包含状态栏的手机屏幕截图"
+        },
+        {
+          "label": {
+            "classId": 2000002,
+            "labelName": {
+              "cn": "证件",
+              "en": "Credentials"
+            }
+          },
+          "clipText": "证件"
+        },
+        {
+          "label": {
+            "classId": 2000003,
+            "labelName": {
+              "cn": "演示文稿",
+              "en": "powerpoint"
+            }
+          },
+          "clipText": "演示文稿的图片"
+        },
+        {
+          "label": {
+            "classId": 2000004,
+            "labelName": {
+              "cn": "文档",
+              "en": "Document"
+            }
+          },
+          "clipText": "一份有文字痕迹的文本类文档的图片"
+        },
+        {
+          "label": {
+            "classId": 2000005,
+            "labelName": {
+              "cn": "表格",
+              "en": "Table"
+            }
+          },
+          "clipText": "一份存在明显表格结构的文档图片"
+        },
+        {
+          "label": {
+            "classId": 2000006,
+            "labelName": {
+              "cn": "发票",
+              "en": "Invoice"
+            }
+          },
+          "clipText": "发票或者收据"
+        },
+        {
+          "label": {
+            "classId": 2000007,
+            "labelName": {
+              "cn": "合影",
+              "en": "group Photo"
+            }
+          },
+          "clipText": "一张多人合影的真实照片，人们穿着正式服装站在一起，背景有横幅或舞台"
+        },
+        {
+          "label": {
+            "classId": 2000008,
+            "labelName": {
+              "cn": "身份证",
+              "en": "ID Card"
+            }
+          },
+          "clipText": "用于证明个人身份的身份证"
+        },
+        {
+          "label": {
+            "classId": 2000009,
+            "labelName": {
+              "cn": "户口本",
+              "en": "Household Register"
+            }
+          },
+          "clipText": "图中有明显户口字样的户口本"
+        },
+        {
+          "label": {
+            "classId": 2000010,
+            "labelName": {
+              "cn": "驾照",
+              "en": "Driver License"
+            }
+          },
+          "clipText": "驾驶证或驾照"
+        },
+        {
+          "label": {
+            "classId": 2000011,
+            "labelName": {
+              "cn": "资格证书",
+              "en": "Certificate"
+            }
+          },
+          "clipText": "资格证书"
+        },
+        {
+          "label": {
+            "classId": 2000012,
+            "labelName": {
+              "cn": "银行卡",
+              "en": "Bank Card"
+            }
+          },
+          "clipText": "一张印有明显银行字样和数字编号的银行卡"
+        },
+        {
+          "label": {
+            "classId": 2000013,
+            "labelName": {
+              "cn": "金融理财",
+              "en": "Finance"
+            }
+          },
+          "clipText": "金融理财相关资料"
+        },
+        {
+          "label": {
+            "classId": 2000014,
+            "labelName": {
+              "cn": "手写资料",
+              "en": "Handwritten Notes"
+            }
+          },
+          "clipText": "人类手写的文字资料"
+        },
+        {
+          "label": {
+            "classId": 2000015,
+            "labelName": {
+              "cn": "地图导航",
+              "en": "Map Navigation"
+            }
+          },
+          "clipText": "地图或者导航"
+        },
+        {
+          "label": {
+            "classId": 2000016,
+            "labelName": {
+              "cn": "短信记录",
+              "en": "SMS Record"
+            }
+          },
+          "clipText": "短信记录"
+        },
+        {
+          "label": {
+            "classId": 2000017,
+            "labelName": {
+              "cn": "表情包",
+              "en": "Emoticon"
+            }
+          },
+          "clipText": "表情包"
+        },
+        {
+          "label": {
+            "classId": 2000018,
+            "labelName": {
+              "cn": "聊天记录",
+              "en": "Chat Log"
+            }
+          },
+          "clipText": "包含聊天内容和时间的聊天记录"
+        },
+        {
+          "label": {
+            "classId": 2000019,
+            "labelName": {
+              "cn": "订单",
+              "en": "Order"
+            }
+          },
+          "clipText": "包含商品和金额的购物订单记录"
+        },
+        {
+          "label": {
+            "classId": 2000020,
+            "labelName": {
+              "cn": "转账记录",
+              "en": "Transaction Record"
+            }
+          },
+          "clipText": "包含金额日期等信息的转账记录"
+        },
+        {
+          "label": {
+            "classId": 2000021,
+            "labelName": {
+              "cn": "通话记录",
+              "en": "Call Log"
+            }
+          },
+          "clipText": "通话记录"
+        },
+        {
+          "label": {
+            "classId": 2000022,
+            "labelName": {
+              "cn": "二维码",
+              "en": "QR Code"
+            }
+          },
+          "clipText": "二维码"
+        },
+        {
+          "label": {
+            "classId": 2000023,
+            "labelName": {
+              "cn": "日程计划",
+              "en": "Schedule"
+            }
+          },
+          "clipText": "包含日期时间和活动名称的日程计划"
+        },
+        {
+          "label": {
+            "classId": 2000024,
+            "labelName": {
+              "cn": "黑板",
+              "en": "Blackboard"
+            }
+          },
+          "clipText": "黑板"
+        },
+        {
+          "label": {
+            "classId": 2000025,
+            "labelName": {
+              "cn": "学生证",
+              "en": "Student Card"
+            }
+          },
+          "clipText": "用于证明学生身份的学生证"
+        },
+        {
+          "clipText": "这是场景或者事物，而不是资料记录类型"
+        }
+      ]
+    },
+    {
+      "name": "活动分类层",
+      "type": "object",
+      "threshold": 0.75,
+      "categories": [
+        {
+          "label": {
+            "classId": 3000001,
+            "labelName": {
+              "cn": "骑行",
+              "en": "cycling"
+            }
+          },
+          "clipText": "人们在骑自行车，骑行活动"
+        },
+        {
+          "label": {
+            "classId": 3000002,
+            "labelName": {
+              "cn": "就餐",
+              "en": "dining"
+            }
+          },
+          "clipText": "人们在吃饭，用餐，就餐活动"
+        },
+        {
+          "label": {
+            "classId": 3000003,
+            "labelName": {
+              "cn": "购物",
+              "en": "shopping"
+            }
+          },
+          "clipText": "人们在购物，买东西，逛商店"
+        },
+        {
+          "label": {
+            "classId": 3000004,
+            "labelName": {
+              "cn": "运动",
+              "en": "sports"
+            }
+          },
+          "clipText": "人们在运动，锻炼，体育活动"
+        },
+        {
+          "label": {
+            "classId": 3000005,
+            "labelName": {
+              "cn": "学习",
+              "en": "studying"
+            }
+          },
+          "clipText": "人们在学习，读书，上课"
+        },
+        {
+          "label": {
+            "classId": 3000006,
+            "labelName": {
+              "cn": "工作",
+              "en": "working"
+            }
+          },
+          "clipText": "人们在工作，办公，开会"
+        },
+        {
+          "label": {
+            "classId": 3000007,
+            "labelName": {
+              "cn": "娱乐",
+              "en": "entertainment"
+            }
+          },
+          "clipText": "人们在娱乐，玩游戏，看电影"
+        },
+        {
+          "label": {
+            "classId": 3000008,
+            "labelName": {
+              "cn": "旅游",
+              "en": "traveling"
+            }
+          },
+          "clipText": "人们在旅游，观光，游览"
+        },
+        {
+          "label": {
+            "classId": 3000009,
+            "labelName": {
+              "cn": "休息",
+              "en": "resting"
+            }
+          },
+          "clipText": "人们在休息，放松，睡觉"
+        },
+        {
+          "clipText": "这不是明确的人物活动场景"
+        }
+      ]
+    },
+    {
+      "name": "场景事物分类层",
+      "type": "object",
+      "threshold": 0.5,
+      "categories": [
+        {
+          "useFace": true,
+          "clipText": "这是人脸"
+        },
+        {
+          "useYolo": true,
+          "clipText": "这是一个场景",
+          "useScene": true
+        },
+        {
+          "label": {
+            "classId": 2000030,
+            "labelName": {
+              "cn": "美食",
+              "en": "food"
+            }
+          },
+          "clipText": "这是食物或饮品的照片，食物应为可食用物品，通常为餐桌或厨房场景"
+        },
+        {
+          "label": {
+            "classId": 2000031,
+            "labelName": {
+              "cn": "蓝牙耳机",
+              "en": "bluetooth earphone"
+            }
+          },
+          "clipText": "这是一张主体为无线耳机或耳机充电盒的照片"
+        },
+        {
+          "label": {
+            "classId": 2000032,
+            "labelName": {
+              "cn": "动植物",
+              "en": "animals and plants"
+            }
+          },
+          "clipText": "这是自然环境或人工环境中的动物或植物图像"
+        },
+        {
+          "useYolo": true,
+          "clipText": "这不是人脸，也不是动植物，也不是蓝牙耳机，也不是一个场景，也不是一张美食或者食物的图片"
+        }
+      ]
+    }
+  ]
+}

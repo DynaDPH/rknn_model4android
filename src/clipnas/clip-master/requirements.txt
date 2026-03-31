@@ -1,7 +1,0 @@
-patch_ng
-cn_clip
-fastapi
-pillow~=10.4.0
-pydantic~=2.8.2
-python-multipart
-uvicorn
