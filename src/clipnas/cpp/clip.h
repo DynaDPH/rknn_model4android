@@ -12,39 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #ifndef _RKNN_DEMO_CLIP_H_
 #define _RKNN_DEMO_CLIP_H_
 
-#include "rknn_api.h"
-#include "common.h"
 #include "clip_tokenizer.h"
+#include "common.h"
+#include "rknn_api.h"
 #include "rknn_clip_utils.h"
 
 #define MAX_TEXT_NUM 16
 
 typedef struct {
-    rknn_clip_context img;
-    rknn_clip_context text;
-    CLIPTokenizer* clip_tokenize;
+  rknn_clip_context img;
+  rknn_clip_context text;
+  CLIPTokenizer* clip_tokenize;
 
-    int input_img_num;
-    int input_text_num;
+  int input_img_num;
+  int input_text_num;
 } rknn_app_context_t;
 
 #include "postprocess.h"
 
-int init_clip_model(const char* img_model_path,
-                    const char* text_model_path,
+int init_clip_model(const char* img_model_path, const char* text_model_path,
                     rknn_app_context_t* app_ctx);
 
 int release_clip_model(rknn_app_context_t* app_ctx);
 
-int inference_clip_model(rknn_app_context_t* app_ctx,
-                        image_buffer_t* img,
-                        char** input_texts,
-                        int text_num,
-                        clip_res* out_res
-                        );
-
-#endif //_RKNN_DEMO_CLIP_H_
+int inference_clip_model(rknn_app_context_t* app_ctx, image_buffer_t* img,
+                         char** input_texts, int text_num, clip_res* out_res);
+int inference_clip_image_only(rknn_app_context_t* app_ctx, image_buffer_t* img,
+                              float** img_output_ptr, int* feature_dim);
+#endif  //_RKNN_DEMO_CLIP_H_
