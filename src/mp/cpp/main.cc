@@ -279,10 +279,12 @@ end:
 }
  */
 
-#define CLIP_PROCESS "rknn_clip_demo"
-#define CLIP_IMAGE_MODEL_PATH "model/clip_images.rknn"
-#define CLIP_TEXT_MODEL_PATH "model/clip_text.rknn"
-#define CLIP_LABELS_PATH "text.txt"
+#define CLIP_PROCESS ROOT_DIR"/clipmaster"
+#define CLIP_IMAGE_MODEL_PATH ROOT_DIR"/model/clip_images.rknn"
+#define CLIP_TEXT_MODEL_PATH ROOT_DIR"/model/clip_text.rknn"
+#define CLIP_LABELS_PATH ROOT_DIR"/model/clip-lables.json"
+#define YOLO_LABELS_PATH ROOT_DIR"/model/coco80-labels.csv"
+#define YOLO_MODEL_PATH ROOT_DIR"/model/yolov8.rknn"
 void *clip_call(int src_fd, uint32_t data_size, uint8_t *msg_data) {
   char *cmd = NULL;
   int cmd_len = 0;
@@ -295,24 +297,40 @@ void *clip_call(int src_fd, uint32_t data_size, uint8_t *msg_data) {
     goto end;
   }
 
-  cmd_len = strlen(CLIP_PROCESS) + strlen("--image-model-path ") +
-            strlen(CLIP_IMAGE_MODEL_PATH) + strlen("--text-model-path ") +
-            strlen(CLIP_TEXT_MODEL_PATH) + strlen("--labels ") +
-            strlen(CLIP_LABELS_PATH) + strlen("--data '") + data_size +
-            strlen("' ") + strlen("--unix-domain-socket ") +
-            strlen(g_option.uds_path) + 64;
+  // 计算命令长度
+  cmd_len = strlen(CLIP_PROCESS) + 
+            strlen(" --clip-image-model-path '") + strlen(CLIP_IMAGE_MODEL_PATH) +
+            strlen("' --clip-text-model-path '") + strlen(CLIP_TEXT_MODEL_PATH) +
+            strlen("' --clip-labels-path '") + strlen(CLIP_LABELS_PATH) +
+            strlen("' --yolo8-model-path '") + strlen(YOLO_MODEL_PATH) +
+            strlen("' --yolo8-labels-path '") + strlen(YOLO_LABELS_PATH) +
+            strlen("' --unix-domain-socket '") + strlen(g_option.uds_path) +
+            strlen("' --data '") + data_size +
+            strlen("'") + 64;
 
-  cmd = (char *)malloc(cmd_len);
+  cmd = (char *)malloc((size_t)cmd_len);
   if (cmd == NULL) {
     LOG("Failed to allocate memory for command");
     goto end;
   }
 
-  snprintf(cmd, cmd_len,
-           "%s --image-model-path '%s' --text-model-path '%s' --labels '%s' "
-           "--unix-domain-socket '%s' --data '%s'",
-           CLIP_PROCESS, CLIP_IMAGE_MODEL_PATH, CLIP_TEXT_MODEL_PATH,
-           CLIP_LABELS_PATH, g_option.uds_path, (char *)msg_data);
+  // 构建命令字符串
+  snprintf(cmd, (size_t)cmd_len,
+           "%s --clip-image-model-path '%s' "
+           "--clip-text-model-path '%s' "
+           "--clip-labels-path '%s' "
+           "--yolo8-model-path '%s' "
+           "--yolo8-labels-path '%s' "
+           "--unix-domain-socket '%s' "
+           "--data '%s'",
+           CLIP_PROCESS,
+           CLIP_IMAGE_MODEL_PATH,
+           CLIP_TEXT_MODEL_PATH,
+           CLIP_LABELS_PATH,
+           YOLO_MODEL_PATH,
+           YOLO_LABELS_PATH,
+           g_option.uds_path,
+           (char *)msg_data);
 
   LOG("Executing CLIP command: %s", cmd);
   pid = start_process(cmd, 0, &exit_code);
@@ -332,7 +350,6 @@ end:
   }
   return ret;
 }
-
 int main(int argc, char **argv) {
   struct uds_server_s server = {0};
 

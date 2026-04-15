@@ -154,12 +154,11 @@ case ${TARGET_SOC} in
         ;;
 esac
 
-
-INSTALL_ROOT=$PWD/install/rknn_${TARGET_SOC}_${TARGET_ARCH}_${BUILD_TYPE}
-# INSTALL_LIB=${INSTALL_ROOT}/lib
-# INSTALL_MODEL=${INSTALL_ROOT}/model
-# INSTALL_BIN=${INSTALL_ROOT}/bin
-
+## ** build project **
+INSTALL_PROJECT_NAME=clipmaster
+INSTALL_ROOT=$PWD/install/${INSTALL_PROJECT_NAME}
+ROOT_PATH=/data/${INSTALL_PROJECT_NAME} # run root path
+## ** build project **
 for prj_itm in $PWD/src/*; do
     echo "=====> ${prj_itm}"
     if [ -d "$prj_itm/cpp" ]; then
@@ -175,7 +174,7 @@ for prj_itm in $PWD/src/*; do
             TARGET_PLATFORM=${TARGET_PLATFORM}_${TARGET_ARCH}
         fi
         ROOT_PWD=$( cd "$( dirname $0 )" && cd -P "$( dirname "$SOURCE" )" && pwd )
-        INSTALL_DIR=${ROOT_PWD}/install/${TARGET_PLATFORM}/${TARGET_SDK}
+        INSTALL_DIR=${ROOT_PWD}/install/${TARGET_SDK}_${TARGET_PLATFORM}_${BUILD_TYPE}
         BUILD_DIR=${ROOT_PWD}/build/build_${TARGET_SDK}_${TARGET_PLATFORM}_${BUILD_TYPE}
 
         echo "==================================="
@@ -190,6 +189,7 @@ for prj_itm in $PWD/src/*; do
         echo "INSTALL_DIR=${INSTALL_DIR}"
         echo "BUILD_DIR=${BUILD_DIR}"
         echo "ANDROID_NDK_PATH=${ANDROID_NDK_PATH}"
+        echo "ROOT_PATH=${ROOT_PATH}"
         echo "==================================="
 
         if [[ ! -d "${BUILD_DIR}" ]]; then
@@ -213,6 +213,7 @@ for prj_itm in $PWD/src/*; do
                 -DENABLE_ASAN=${ENABLE_ASAN} \
                 -DDISABLE_RGA=${DISABLE_RGA} \
                 -DDISABLE_LIBJPEG=${DISABLE_LIBJPEG} \
+                -DROOT_PATH=${ROOT_PATH}  \
                 -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}
         # make VERBOSE=1
         make -j4
@@ -242,3 +243,8 @@ for prj_itm in $PWD/src/*; do
         fi
     fi
 done
+cd $PWD/install/
+tar -zcvf ${INSTALL_PROJECT_NAME}.tar.gz ${INSTALL_PROJECT_NAME}
+          # cp -r ${INSTALL_PROJECT_NAME}.tar.gz 
+cd -
+echo "build success"

@@ -866,6 +866,8 @@ int main(int argc, char **argv) {
     }
 
 out:
+    free_clip_labelset(&ctx.clip.labelset);
+    free_yolo8_labelset(&ctx.yolov8.labelset);
     release_clip_model(&ctx.clip.app_ctx);
     release_yolov8_model(&ctx.yolov8.yolov8_app_ctx);
     if (uds_fd >= 0) close(uds_fd);

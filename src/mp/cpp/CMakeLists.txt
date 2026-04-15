@@ -17,6 +17,8 @@ endif ()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/ 3rdparty.out)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/ utils.out)
+add_definitions(-DROOT_DIR="${ROOT_PATH}")
+message(STATUS "${ROOT_PATH}")
 
 set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
 

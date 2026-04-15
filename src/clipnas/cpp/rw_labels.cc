@@ -1,5 +1,9 @@
 #include "rw_labels.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
+#include "json-c/json.h"
 void free_yolo8_labelset(struct yolo8_labelset_s *labelset) {
     if(labelset->labels != NULL) {
         free(labelset->labels);

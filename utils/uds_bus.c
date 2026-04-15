@@ -445,8 +445,6 @@ int uds_client_create(const char *uds_path) {
 
   LOG("UDS client connected to %s with fd %d", uds_path, sockfd);
 
-  usleep(10000);
-
   goto end;
 err:
   if (sockfd != -1) {
